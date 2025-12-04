@@ -16,13 +16,13 @@ export function LoginPage() {
 
     if (accessToken && refreshToken) {
       login(accessToken, refreshToken);
-      navigate('/');
+      navigate('/app');
     }
   }, [searchParams, login, navigate]);
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/');
+      navigate('/app');
     }
   }, [isAuthenticated, navigate]);
 

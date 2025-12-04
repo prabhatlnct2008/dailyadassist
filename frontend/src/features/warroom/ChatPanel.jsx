@@ -39,9 +39,9 @@ export function ChatPanel() {
 function WelcomeMessage() {
   return (
     <div className="flex flex-col items-center justify-center h-full text-center px-8">
-      <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mb-4">
+      <div className="w-12 h-12 bg-primary-100 rounded-full flex items-center justify-center mb-4">
         <svg
-          className="w-8 h-8 text-primary-600"
+          className="w-6 h-6 text-primary-600"
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"

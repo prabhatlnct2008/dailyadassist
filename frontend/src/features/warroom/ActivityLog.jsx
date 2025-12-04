@@ -90,7 +90,7 @@ export function ActivityLog() {
             key={activity.id}
             className="flex items-start space-x-3 p-3 bg-white rounded-lg border border-gray-100"
           >
-            <div className="flex-shrink-0 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-lg">
+            <div className="flex-shrink-0 w-7 h-7 bg-gray-100 rounded-full flex items-center justify-center text-base">
               {getActionIcon(activity.action_type)}
             </div>
             <div className="flex-1 min-w-0">

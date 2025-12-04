@@ -17,7 +17,7 @@ class ActivityLog(db.Model):
     entity_type = db.Column(db.String(50), nullable=True)  # campaign, adset, ad, draft
     entity_id = db.Column(db.String(100), nullable=True)
     rationale = db.Column(db.Text, nullable=True)
-    metadata = db.Column(db.JSON, nullable=True)
+    extra_data = db.Column(db.JSON, nullable=True)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_agent_action = db.Column(db.Boolean, default=False)

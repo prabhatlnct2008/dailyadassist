@@ -12,7 +12,7 @@ from datetime import datetime
 import uuid
 
 from ..extensions import db
-from ..models.user import User
+from ..models.user import User, UserPreferences
 from ..models.facebook import FacebookConnection
 from ..schemas.auth import UserResponse
 
@@ -82,6 +82,15 @@ def google_callback():
             db.session.add(user)
         else:
             user.last_login_at = datetime.utcnow()
+
+        # Ensure user has preferences (create if missing)
+        if not user.preferences:
+            preferences = UserPreferences(
+                id=str(uuid.uuid4()),
+                user_id=user.id,
+                onboarding_completed=False
+            )
+            db.session.add(preferences)
 
         db.session.commit()
 

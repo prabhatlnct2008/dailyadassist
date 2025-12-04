@@ -6,6 +6,7 @@ import { ToastProvider } from './features/shared/Toast';
 import { FullPageLoader } from './features/shared/Loader';
 
 // Pages
+import { LandingPage } from './features/landing/LandingPage';
 import { LoginPage } from './features/auth/LoginPage';
 import { AuthCallback } from './features/auth/AuthCallback';
 import { SetupWizard } from './features/onboarding/SetupWizard';
@@ -29,7 +30,7 @@ function ProtectedRoute({ children }) {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return children;
@@ -46,9 +47,15 @@ function AppRoutes() {
     <Routes>
       {/* Public routes */}
       <Route
+        path="/"
+        element={
+          isAuthenticated ? <Navigate to="/app" replace /> : <LandingPage />
+        }
+      />
+      <Route
         path="/login"
         element={
-          isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />
+          isAuthenticated ? <Navigate to="/app" replace /> : <LoginPage />
         }
       />
       <Route path="/auth/callback" element={<AuthCallback />} />
@@ -71,7 +78,7 @@ function AppRoutes() {
         }
       />
       <Route
-        path="/"
+        path="/app"
         element={
           <ProtectedRoute>
             <ConversationProvider>

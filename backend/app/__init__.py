@@ -24,6 +24,10 @@ def create_app(config_name=None):
     cors.init_app(app, origins=[app.config['FRONTEND_URL']], supports_credentials=True)
     jwt.init_app(app)
 
+    # Initialize OAuth
+    from .api.auth import init_oauth
+    init_oauth(app)
+
     # Register blueprints
     register_blueprints(app)
 

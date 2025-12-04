@@ -43,7 +43,7 @@ class Message(db.Model):
 
     role = db.Column(db.String(20), nullable=False)  # user, assistant, system
     content = db.Column(db.Text, nullable=False)
-    metadata = db.Column(db.JSON, nullable=True)  # Tool calls, attachments, etc.
+    extra_data = db.Column(db.JSON, nullable=True)  # Tool calls, attachments, etc.
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_visible = db.Column(db.Boolean, default=True)

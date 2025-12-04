@@ -14,9 +14,9 @@ export function AuthCallback() {
 
     if (accessToken && refreshToken) {
       login(accessToken, refreshToken);
-      navigate('/');
+      navigate('/app');
     } else {
-      navigate('/login');
+      navigate('/');
     }
   }, [searchParams, login, navigate]);
 

@@ -8,9 +8,9 @@ export function CurrentDraft() {
   if (!currentDraft) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-center px-8">
-        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+        <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-4">
           <svg
-            className="w-8 h-8 text-gray-400"
+            className="w-6 h-6 text-gray-400"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"

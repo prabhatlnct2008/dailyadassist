@@ -21,7 +21,7 @@ langchain==0.1.0
 langchain-openai==0.0.2
 langchain-anthropic==0.1.1
 openai==1.6.1
-anthropic==0.8.1
+anthropic
 
 # Facebook SDK
 facebook-business==19.0.0

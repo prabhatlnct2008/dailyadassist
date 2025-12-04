@@ -56,20 +56,20 @@ def get_recommendations():
         user_id=user_id,
         action_type='recommendation_made'
     ).filter(
-        ActivityLog.metadata['applied'].astext != 'true'
+        ActivityLog.extra_data['applied'].astext != 'true'
     ).order_by(ActivityLog.created_at.desc()).limit(10).all()
 
     return jsonify({
         'recommendations': [
             {
                 'id': r.id,
-                'type': r.metadata.get('recommendation_type', 'unknown'),
+                'type': r.extra_data.get('recommendation_type', 'unknown'),
                 'description': r.rationale,
                 'entity_type': r.entity_type,
                 'entity_id': r.entity_id,
-                'entity_name': r.metadata.get('entity_name', ''),
-                'suggested_action': r.metadata.get('suggested_action', ''),
-                'impact': r.metadata.get('expected_impact', ''),
+                'entity_name': r.extra_data.get('entity_name', ''),
+                'suggested_action': r.extra_data.get('suggested_action', ''),
+                'impact': r.extra_data.get('expected_impact', ''),
                 'created_at': r.created_at.isoformat()
             }
             for r in recommendations
@@ -94,7 +94,7 @@ def apply_recommendation(recommendation_id):
 
     try:
         # Execute the recommendation based on type
-        rec_type = recommendation.metadata.get('recommendation_type')
+        rec_type = recommendation.extra_data.get('recommendation_type')
         entity_id = recommendation.entity_id
 
         result = {'success': True, 'message': 'Recommendation applied'}
@@ -109,7 +109,7 @@ def apply_recommendation(recommendation_id):
 
             if account and fb_connection:
                 fb_service = FacebookService(fb_connection.get_access_token())
-                new_budget = recommendation.metadata.get('new_budget')
+                new_budget = recommendation.extra_data.get('new_budget')
                 fb_service.adjust_budget(entity_id, new_budget)
                 result['message'] = f'Budget increased to {new_budget}'
 
@@ -127,8 +127,8 @@ def apply_recommendation(recommendation_id):
                 result['message'] = 'Campaign paused'
 
         # Mark recommendation as applied
-        recommendation.metadata['applied'] = True
-        recommendation.metadata['applied_at'] = datetime.utcnow().isoformat()
+        recommendation.extra_data['applied'] = True
+        recommendation.extra_data['applied_at'] = datetime.utcnow().isoformat()
 
         # Log the application
         applied_log = ActivityLog(
@@ -138,7 +138,7 @@ def apply_recommendation(recommendation_id):
             entity_type=recommendation.entity_type,
             entity_id=entity_id,
             rationale=f"Applied recommendation: {recommendation.rationale}",
-            metadata={'recommendation_id': recommendation_id},
+            extra_data={'recommendation_id': recommendation_id},
             created_at=datetime.utcnow(),
             is_agent_action=False
         )

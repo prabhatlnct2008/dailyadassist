@@ -1,0 +1,1 @@
+/agent-systems-lab, B and C, keep seperate, create proper css/svg, i guess the page is static only (please reread the landing page copy), separate "newsletter-only"
