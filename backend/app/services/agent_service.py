@@ -1,4 +1,4 @@
-"""Agent orchestration service."""
+"""Agent orchestration service with real tool integration."""
 from typing import Dict, Any, List, Optional, Generator
 from datetime import datetime
 import json
@@ -10,291 +10,441 @@ from flask import current_app
 logger = logging.getLogger(__name__)
 
 
+class AgentServiceError(Exception):
+    """Custom exception for agent service errors."""
+    pass
+
+
 class AgentService:
-    """Service for orchestrating the AI agent."""
+    """Service for orchestrating the AI agent with real tool execution."""
 
     def __init__(
         self,
         user_id: str,
         conversation: Optional[Any] = None,
         preferences: Optional[Any] = None,
-        ad_account: Optional[Any] = None
+        ad_account: Optional[Any] = None,
+        facebook_connection: Optional[Any] = None
     ):
         """Initialize the agent service."""
         self.user_id = user_id
         self.conversation = conversation
         self.preferences = preferences
         self.ad_account = ad_account
+        self.facebook_connection = facebook_connection
 
-        # Initialize LLM based on config
-        self.llm = self._init_llm()
+        # Track initialization status
+        self.llm = None
+        self.llm_error = None
+        self.tools = []
+        self.agent_executor = None
+
+        # Initialize components
+        self._init_llm()
+        self._init_tools()
+        self._init_agent()
 
     def _init_llm(self):
         """Initialize the LLM based on configuration."""
         provider = os.environ.get('LLM_PROVIDER', 'openai')
 
-        try:
-            if provider == 'anthropic':
-                from langchain_anthropic import ChatAnthropic
-                return ChatAnthropic(
-                    model="claude-3-sonnet-20240229",
-                    anthropic_api_key=os.environ.get('ANTHROPIC_API_KEY')
-                )
-            else:
-                from langchain_openai import ChatOpenAI
-                return ChatOpenAI(
-                    model="gpt-4-turbo-preview",
-                    openai_api_key=os.environ.get('OPENAI_API_KEY'),
-                    streaming=True
-                )
-        except Exception as e:
-            logger.warning(f"Failed to initialize LLM: {e}. Using mock responses.")
-            return None
+        # Check for API keys first
+        openai_key = os.environ.get('OPENAI_API_KEY', '').strip()
+        anthropic_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
 
-    def _get_system_prompt(self) -> str:
-        """Get the system prompt for the orchestrator agent."""
-        tone = self.preferences.default_tone if self.preferences else 'friendly'
-        budget = self.preferences.default_daily_budget if self.preferences else 50
-
-        return f"""You are a Senior Media Buyer and Facebook Ads Strategist AI assistant named "Daily Ad Agent".
-
-Your persona is {tone} and professional. You help busy marketers and founders manage their Facebook ads efficiently.
-
-Your capabilities:
-1. Analyze past ad performance and identify winners/losers
-2. Generate creative briefs and ad copy
-3. Suggest target audiences based on product info
-4. Create and manage Facebook ad campaigns
-5. Provide daily performance summaries and recommendations
-
-User's default daily budget: ${budget}
-
-Current conversation state: {self.conversation.state if self.conversation else 'idle'}
-
-Guidelines:
-- Be proactive and suggest next steps
-- Always explain your reasoning
-- Ask for confirmation before publishing ads
-- Warn about budgets that exceed 5x the default
-- Check for policy violations before publishing
-- Reference past winners when suggesting new ads
-- Keep responses concise but informative
-
-When drafting ads:
-- Primary Text: 125-300 characters
-- Headline: max 40 characters
-- Description: 30-60 characters
-- Always suggest a CTA
-
-You have access to tools for:
-- get_account_stats: Get performance metrics
-- get_top_performers: Find winning ads
-- get_underperformers: Find poor performers
-- generate_creative_briefs: Create ad concepts
-- generate_ad_copy: Write ad text variants
-- suggest_audiences: Recommend targeting
-- update_preview: Update the ad preview UI
-- publish_campaign: Create Facebook campaign
-- adjust_budget: Change campaign budget
-- pause_items: Pause campaigns/ads
-"""
-
-    def chat(self, message: str) -> Generator[str, None, None]:
-        """Process a chat message and stream the response."""
-        if not self.llm:
-            # Mock response when LLM is not available
-            yield from self._mock_chat_response(message)
+        if provider == 'anthropic' and not anthropic_key:
+            self.llm_error = "ANTHROPIC_API_KEY not configured"
+            logger.error(self.llm_error)
+            return
+        elif provider == 'openai' and not openai_key:
+            self.llm_error = "OPENAI_API_KEY not configured"
+            logger.error(self.llm_error)
             return
 
         try:
-            from langchain.schema import HumanMessage, SystemMessage
+            if provider == 'anthropic':
+                from langchain_anthropic import ChatAnthropic
+                self.llm = ChatAnthropic(
+                    model="claude-3-sonnet-20240229",
+                    anthropic_api_key=anthropic_key,
+                    streaming=True,
+                    temperature=0.7
+                )
+                logger.info("Initialized Anthropic Claude LLM")
+            else:
+                from langchain_openai import ChatOpenAI
+                self.llm = ChatOpenAI(
+                    model="gpt-4-turbo-preview",
+                    openai_api_key=openai_key,
+                    streaming=True,
+                    temperature=0.7
+                )
+                logger.info("Initialized OpenAI GPT-4 LLM")
 
-            messages = [
-                SystemMessage(content=self._get_system_prompt()),
-            ]
+        except Exception as e:
+            self.llm_error = f"Failed to initialize LLM: {str(e)}"
+            logger.error(self.llm_error, exc_info=True)
 
-            # Add conversation history if available
-            if self.conversation:
-                from ..models.conversation import Message
-                history = Message.query.filter_by(
-                    conversation_id=self.conversation.id,
-                    is_visible=True
-                ).order_by(Message.created_at.asc()).limit(20).all()
+    def _init_tools(self):
+        """Initialize the agent tools."""
+        try:
+            from ..agents.tools import get_all_tools
 
-                for msg in history:
-                    if msg.role == 'user':
-                        messages.append(HumanMessage(content=msg.content))
-                    elif msg.role == 'assistant':
-                        from langchain.schema import AIMessage
-                        messages.append(AIMessage(content=msg.content))
+            self.tools = get_all_tools(
+                user_id=self.user_id,
+                ad_account=self.ad_account,
+                facebook_connection=self.facebook_connection,
+                preferences=self.preferences
+            )
+            logger.info(f"Initialized {len(self.tools)} agent tools")
+        except Exception as e:
+            logger.error(f"Failed to initialize tools: {e}", exc_info=True)
+            self.tools = []
 
+    def _init_agent(self):
+        """Initialize the agent executor with tools."""
+        if not self.llm:
+            logger.warning("Cannot initialize agent: LLM not available")
+            return
+
+        if not self.tools:
+            logger.warning("No tools available, using simple chat mode")
+            return
+
+        try:
+            from langchain.agents import AgentExecutor, create_tool_calling_agent
+            from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+
+            # Create the prompt template
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", self._get_system_prompt()),
+                MessagesPlaceholder(variable_name="chat_history"),
+                ("human", "{input}"),
+                MessagesPlaceholder(variable_name="agent_scratchpad"),
+            ])
+
+            # Create the agent with tool calling capability
+            agent = create_tool_calling_agent(self.llm, self.tools, prompt)
+
+            # Create the executor
+            self.agent_executor = AgentExecutor(
+                agent=agent,
+                tools=self.tools,
+                verbose=True,
+                handle_parsing_errors=True,
+                max_iterations=10,
+                return_intermediate_steps=True
+            )
+            logger.info("Agent executor initialized successfully")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize agent executor: {e}", exc_info=True)
+            self.agent_executor = None
+
+    def _get_system_prompt(self) -> str:
+        """Get the system prompt for the agent."""
+        tone = self.preferences.default_tone if self.preferences else 'friendly'
+        budget = self.preferences.default_daily_budget if self.preferences else 50
+        currency = self.preferences.default_currency if self.preferences else 'USD'
+        state = self.conversation.state if self.conversation else 'idle'
+        has_account = 'Yes' if self.ad_account else 'No'
+
+        return f"""You are the Daily Ad Agent, an AI Senior Media Buyer and Facebook Ads Strategist.
+
+## Your Persona
+- Tone: {tone}
+- Style: Professional yet approachable
+- Always explain your reasoning
+- Be proactive with suggestions
+
+## User Context
+- Default Daily Budget: {currency} {budget}
+- Current Conversation State: {state}
+- Ad Account Connected: {has_account}
+
+## Your Capabilities (Use the tools provided!)
+
+### Performance Analysis Tools
+- `get_account_stats`: Get overall account metrics (spend, impressions, clicks, ROAS)
+- `get_top_performers`: Find winning ads/campaigns
+- `get_underperformers`: Identify poor performers to pause
+- `summarize_performance`: Generate plain-language performance summary
+
+### Creative Generation Tools
+- `generate_creative_briefs`: Create strategic ad concepts
+- `generate_ad_copy`: Write ad copy variants with proper character limits
+- `suggest_audiences`: Recommend targeting options
+
+### Execution Tools
+- `update_preview_state`: Update the ad preview shown to user
+- `save_draft`: Save current ad as a draft
+- `publish_campaign`: Publish a draft (requires confirmation!)
+- `adjust_budget`: Change campaign budgets
+- `pause_items`: Pause underperforming campaigns/ads
+
+## Guidelines
+
+1. **ALWAYS use tools** when the user asks about performance, wants to create ads, or manage campaigns.
+   - Don't make up data - use tools to get real information
+   - When asked about stats, call `get_account_stats` first
+
+2. **Ad Copy Requirements**:
+   - Primary Text: 125-300 characters
+   - Headline: max 40 characters
+   - Description: 30-60 characters
+   - Always suggest an appropriate CTA
+
+3. **Safety First**:
+   - Warn if budget exceeds 5x the default (${budget * 5})
+   - NEVER publish without explicit user confirmation
+   - Check for policy violations before publishing
+
+4. **Be Transparent**:
+   - Tell the user what tools you're using
+   - Show the data you're basing recommendations on
+   - Explain your reasoning
+
+5. **Keep responses concise** but informative. Use markdown for structure."""
+
+    def _get_conversation_history(self) -> list:
+        """Get conversation history as LangChain messages."""
+        from langchain_core.messages import HumanMessage, AIMessage
+
+        history = []
+        if not self.conversation:
+            return history
+
+        try:
+            from ..models.conversation import Message
+            msgs = Message.query.filter_by(
+                conversation_id=self.conversation.id,
+                is_visible=True
+            ).order_by(Message.created_at.asc()).limit(20).all()
+
+            for msg in msgs:
+                if msg.role == 'user':
+                    history.append(HumanMessage(content=msg.content))
+                elif msg.role == 'assistant':
+                    history.append(AIMessage(content=msg.content))
+        except Exception as e:
+            logger.error(f"Error loading conversation history: {e}")
+
+        return history
+
+    def chat(self, message: str) -> Generator[str, None, None]:
+        """Process a chat message and stream the response with tool execution."""
+
+        # If LLM not available, return error (not silent mock!)
+        if not self.llm:
+            error_msg = f"""**Configuration Error**
+
+I'm unable to process your request because the AI service is not properly configured.
+
+**Error**: {self.llm_error or 'LLM not initialized'}
+
+**To fix this**, please ensure:
+1. `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` is set in your `.env` file
+2. The API key is valid and has available credits
+3. `LLM_PROVIDER` is set to either 'openai' or 'anthropic'
+
+Please check your configuration and try again."""
+
+            for char in error_msg:
+                yield char
+            return
+
+        # Get conversation history
+        chat_history = self._get_conversation_history()
+
+        # If we have an agent executor with tools, use it
+        if self.agent_executor:
+            yield from self._stream_agent_response(message, chat_history)
+        else:
+            # Fallback to simple chat without tools
+            yield from self._stream_simple_chat(message, chat_history)
+
+    def _stream_agent_response(
+        self,
+        message: str,
+        chat_history: list
+    ) -> Generator[str, None, None]:
+        """Stream response from the agent executor with tool visibility."""
+
+        try:
+            # Signal that we're processing
+            yield "**Analyzing your request...**\n\n"
+
+            # Run the agent
+            result = self.agent_executor.invoke({
+                "input": message,
+                "chat_history": chat_history
+            })
+
+            # Extract intermediate steps (tool calls)
+            intermediate_steps = result.get("intermediate_steps", [])
+
+            # Show tool calls to user
+            if intermediate_steps:
+                yield "**Tools Used:**\n"
+                for step in intermediate_steps:
+                    action, observation = step
+                    tool_name = action.tool
+                    tool_input = action.tool_input
+
+                    yield f"- `{tool_name}`: "
+                    if isinstance(tool_input, dict):
+                        yield f"{json.dumps(tool_input)}\n"
+                    else:
+                        yield f"{tool_input}\n"
+
+                yield "\n---\n\n"
+
+            # Stream the final output
+            output = result.get("output", "")
+            for char in output:
+                yield char
+
+        except Exception as e:
+            logger.error(f"Agent execution error: {e}", exc_info=True)
+            error_msg = f"\n\n**Error during processing**: {str(e)}\n\nPlease try rephrasing your request."
+            for char in error_msg:
+                yield char
+
+    def _stream_simple_chat(
+        self,
+        message: str,
+        chat_history: list
+    ) -> Generator[str, None, None]:
+        """Stream a simple chat response without tools."""
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        try:
+            messages = [SystemMessage(content=self._get_system_prompt())]
+            messages.extend(chat_history)
             messages.append(HumanMessage(content=message))
+
+            # Note: Tools are not available in simple mode
+            yield "*Note: Running in simple chat mode (tools not available)*\n\n"
 
             # Stream the response
             for chunk in self.llm.stream(messages):
-                if hasattr(chunk, 'content'):
+                if hasattr(chunk, 'content') and chunk.content:
                     yield chunk.content
 
         except Exception as e:
-            logger.error(f"Error in chat: {e}")
-            yield f"I apologize, but I encountered an error: {str(e)}. Please try again."
-
-    def _mock_chat_response(self, message: str) -> Generator[str, None, None]:
-        """Generate mock responses when LLM is not available."""
-        message_lower = message.lower()
-
-        if any(word in message_lower for word in ['hello', 'hi', 'hey', 'start']):
-            response = """Hello! I'm your Daily Ad Agent, ready to help you create and manage Facebook ads.
-
-Here's what I can help you with today:
-1. **Analyze Performance** - Review your recent ad performance
-2. **Create New Ads** - Generate copy and creatives for new campaigns
-3. **Optimize Existing Campaigns** - Adjust budgets and pause underperformers
-
-What would you like to focus on?"""
-
-        elif 'performance' in message_lower or 'stats' in message_lower:
-            response = """Based on your recent performance data:
-
-**Last 7 Days Summary:**
-- Total Spend: $1,500
-- Impressions: 45,000
-- Clicks: 1,200 (CTR: 2.67%)
-- Conversions: 45
-- Average ROAS: 3.2x
-
-**Top Performer:**
-"Red Hoodie - Winter Sale" with ROAS 4.2x
-
-**Recommendation:** Consider increasing budget on "Red Hoodie - Winter Sale" by 30% to capitalize on its strong performance.
-
-Would you like me to apply this recommendation?"""
-
-        elif 'create' in message_lower or 'new ad' in message_lower or 'draft' in message_lower:
-            response = """I'd be happy to help create a new ad! Let me gather some information:
-
-1. **What product or service** are you promoting?
-2. **What's your target audience** (age, interests, location)?
-3. **What's your campaign objective** (sales, traffic, awareness)?
-
-Once you share these details, I'll generate 3 creative variants for you to review."""
-
-        elif any(word in message_lower for word in ['hoodie', 'product', 'sell']):
-            response = """Great! Let me create some ad variants for you.
-
-**Creative Brief: Product Launch**
-
-I've generated 3 variants based on successful patterns:
-
-**Variant 1 - Urgency + Discount**
-- Primary: "Don't miss out! Our best-selling hoodie is back with 20% off. Limited stock available - grab yours before they're gone!"
-- Headline: "20% Off - Limited Time"
-- CTA: Shop Now
-
-**Variant 2 - Social Proof**
-- Primary: "Join 10,000+ happy customers who love our ultra-soft hoodies. Premium comfort, unbeatable style."
-- Headline: "Customer Favorite"
-- CTA: Shop Now
-
-**Variant 3 - Quality Focus**
-- Primary: "Premium cotton. Perfect fit. Made to last. Experience the hoodie that's changing the game."
-- Headline: "Quality You Can Feel"
-- CTA: Learn More
-
-I've updated the preview panel with Variant 1. Which version would you like to publish, or should I make adjustments?"""
-
-        elif 'publish' in message_lower or 'launch' in message_lower or 'go ahead' in message_lower:
-            response = """Before I publish, let me confirm the details:
-
-**Campaign: "Red Hoodie - Winter Sale"**
-- Objective: Conversions
-- Daily Budget: $50
-- Target: US, Ages 18-34, Interests: Fashion, Streetwear
-- CTA: Shop Now
-
-**Safety Checks:**
-- Budget is within your usual range
-- No policy violations detected
-- Ad copy meets character limits
-
-Reply "Yes" to confirm and publish, or let me know if you'd like to make changes."""
-
-        elif message_lower in ['yes', 'confirm', 'approved']:
-            response = """Your campaign has been published successfully!
-
-**Campaign Details:**
-- Campaign ID: camp_123456
-- Status: Active (will start delivering shortly)
-- Ads Manager Link: [View in Ads Manager]
-
-I'll monitor performance and send you a summary tomorrow. Would you like to create another ad or review anything else?"""
-
-        else:
-            response = f"""I understand you're asking about: "{message}"
-
-As your AI Media Buyer, I can help you with:
-- **Performance Analysis** - "Show me my stats"
-- **Create New Ads** - "Let's create an ad for [product]"
-- **Optimize Campaigns** - "What should I improve?"
-- **Publish Ads** - "Launch this campaign"
-
-What would you like to do?"""
-
-        # Yield character by character to simulate streaming
-        for char in response:
-            yield char
+            logger.error(f"Simple chat error: {e}", exc_info=True)
+            yield f"\n\n**Error**: {str(e)}"
 
     def generate_daily_brief(self) -> Dict[str, Any]:
         """Generate the proactive daily brief."""
         if not self.ad_account:
             return {
-                'message': "Welcome! Connect your Facebook Ad Account to get started with daily performance insights.",
+                'message': "Welcome! Connect your Facebook Ad Account to get personalized performance insights.",
                 'has_data': False,
                 'recommendations': []
             }
 
-        # In production, this would use actual Facebook data
-        # For now, return mock data
-        return {
-            'message': """Good morning! Here's your daily ad performance summary:
+        # Try to get real data using tools
+        try:
+            from ..agents.tools.performance_tools import GetAccountStatsTool, GetTopPerformersTool
 
-**Yesterday's Highlights:**
-- Total Spend: $250
-- Best ROAS: 4.2x on "Red Hoodie - Winter Sale"
-- 3 active campaigns running
+            # Get stats
+            stats_tool = GetAccountStatsTool(
+                ad_account=self.ad_account,
+                access_token=self._get_access_token()
+            )
+            stats_json = stats_tool._run(time_range='last_7_days')
+            stats = json.loads(stats_json)
 
-**Today's Recommendations:**
-1. Increase budget on "Red Hoodie - Winter Sale" by 30% - it's been consistently outperforming
-2. Consider pausing "Old Collection - Generic" (ROAS 0.7)
+            # Get top performers
+            top_tool = GetTopPerformersTool(
+                ad_account=self.ad_account,
+                access_token=self._get_access_token()
+            )
+            top_json = top_tool._run(metric='roas', limit=3)
+            top_data = json.loads(top_json)
+            top_performers = top_data.get('top_performers', [])
 
-Would you like me to apply any of these recommendations?""",
-            'has_data': True,
-            'top_performer': {
-                'name': 'Red Hoodie - Winter Sale',
-                'roas': 4.2,
-                'spend': 100.00
-            },
-            'recommendations': [
-                {
-                    'type': 'increase_budget',
-                    'entity': 'Red Hoodie - Winter Sale',
-                    'action': 'Increase budget by 30%',
-                    'rationale': 'Consistent ROAS above 4.0 for 5 days'
-                },
-                {
-                    'type': 'pause_campaign',
-                    'entity': 'Old Collection - Generic',
-                    'action': 'Pause campaign',
-                    'rationale': 'ROAS below 1.0, burning budget'
-                }
-            ],
-            'summary_stats': {
-                'total_spend': 250.00,
-                'total_conversions': 12,
-                'average_roas': 2.8,
-                'active_campaigns': 3
+            # Build message
+            message = f"""Good morning! Here's your daily ad performance summary:
+
+**Last 7 Days Performance:**
+- Total Spend: ${stats.get('spend', 0):.2f}
+- Impressions: {stats.get('impressions', 0):,}
+- Clicks: {stats.get('clicks', 0):,}
+- CTR: {stats.get('ctr', 0):.2f}%
+- Conversions: {stats.get('conversions', 0)}
+- ROAS: {stats.get('roas', 0):.1f}x
+
+"""
+            if top_performers:
+                top = top_performers[0]
+                message += f"""**Top Performer:**
+"{top.get('name', 'Unknown')}" with ROAS {top.get('roas', 0):.1f}x
+
+"""
+
+            message += "What would you like to focus on today?"
+
+            return {
+                'message': message,
+                'has_data': True,
+                'top_performer': top_performers[0] if top_performers else None,
+                'recommendations': self._generate_recommendations(stats, top_performers),
+                'summary_stats': stats
             }
-        }
+
+        except Exception as e:
+            logger.error(f"Error generating daily brief: {e}", exc_info=True)
+            return {
+                'message': f"Good morning! I had trouble fetching your performance data. Error: {str(e)}",
+                'has_data': False,
+                'recommendations': []
+            }
+
+    def _get_access_token(self) -> Optional[str]:
+        """Get the Facebook access token."""
+        if self.facebook_connection:
+            try:
+                return self.facebook_connection.get_access_token()
+            except Exception:
+                pass
+        return os.environ.get('FACEBOOK_PAGE_ACCESS_TOKEN')
+
+    def _generate_recommendations(
+        self,
+        stats: Dict[str, Any],
+        top_performers: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Generate recommendations based on performance data."""
+        recommendations = []
+
+        # Check ROAS
+        if stats.get('roas', 0) > 3:
+            recommendations.append({
+                'type': 'scale',
+                'action': 'Consider increasing budget',
+                'rationale': f'Your ROAS of {stats.get("roas", 0):.1f}x is above target'
+            })
+        elif stats.get('roas', 0) < 1:
+            recommendations.append({
+                'type': 'optimize',
+                'action': 'Review underperforming campaigns',
+                'rationale': f'Your ROAS of {stats.get("roas", 0):.1f}x is below breakeven'
+            })
+
+        # Top performer recommendation
+        if top_performers:
+            top = top_performers[0]
+            if top.get('roas', 0) > stats.get('roas', 0) * 1.5:
+                recommendations.append({
+                    'type': 'scale',
+                    'entity': top.get('name'),
+                    'action': f'Increase budget on "{top.get("name")}"',
+                    'rationale': f'Performing {top.get("roas", 0) / stats.get("roas", 1):.1f}x better than average'
+                })
+
+        return recommendations
 
     def generate_ad_copy(
         self,
@@ -302,42 +452,58 @@ Would you like me to apply any of these recommendations?""",
         tone: str = 'friendly',
         num_variants: int = 3
     ) -> List[Dict[str, Any]]:
-        """Generate ad copy variants."""
-        if self.llm:
-            try:
-                from langchain.schema import HumanMessage, SystemMessage
+        """Generate ad copy variants using the LLM."""
+        if not self.llm:
+            # Return mock data if no LLM
+            return self._mock_ad_copy(product_info, num_variants)
 
-                prompt = f"""Generate {num_variants} Facebook ad copy variants for:
-Product: {product_info}
+        try:
+            from langchain_core.messages import HumanMessage, SystemMessage
+
+            prompt = f"""Generate exactly {num_variants} Facebook ad copy variants for:
+Product/Service: {product_info}
 Tone: {tone}
 
-For each variant provide:
-1. An angle/approach name
-2. Primary text (125-300 chars)
-3. Headline (max 40 chars)
-4. Description (30-60 chars)
-5. Suggested CTA
+For each variant, provide a JSON object with these exact fields:
+- variant_number: (1, 2, or 3)
+- angle: (the creative angle/approach name)
+- primary_text: (125-300 characters)
+- headline: (max 40 characters)
+- description: (30-60 characters)
+- suggested_cta: (one of: shop_now, learn_more, sign_up, book_now, contact_us)
 
-Format as JSON array."""
+Return ONLY a valid JSON array, no other text."""
 
-                messages = [
-                    SystemMessage(content="You are an expert Facebook ad copywriter."),
-                    HumanMessage(content=prompt)
-                ]
+            messages = [
+                SystemMessage(content="You are an expert Facebook ad copywriter. Always return valid JSON."),
+                HumanMessage(content=prompt)
+            ]
 
-                response = self.llm.invoke(messages)
-                # Parse response and return structured data
-                # For now, fall through to mock data
+            response = self.llm.invoke(messages)
+            content = response.content.strip()
 
-            except Exception as e:
-                logger.error(f"Error generating copy: {e}")
+            # Try to parse JSON from response
+            if content.startswith('```'):
+                # Remove markdown code blocks
+                content = content.split('```')[1]
+                if content.startswith('json'):
+                    content = content[4:]
+                content = content.strip()
 
-        # Mock data
+            variants = json.loads(content)
+            return variants
+
+        except Exception as e:
+            logger.error(f"Error generating ad copy: {e}", exc_info=True)
+            return self._mock_ad_copy(product_info, num_variants)
+
+    def _mock_ad_copy(self, product_info: str, num_variants: int) -> List[Dict[str, Any]]:
+        """Generate mock ad copy as fallback."""
         return [
             {
                 'variant_number': 1,
                 'angle': 'Urgency + Discount',
-                'primary_text': f"Don't miss out! Our best-selling product is now 20% off. Limited stock available - grab yours before they're gone!",
+                'primary_text': f"Don't miss out! Our {product_info} is now 20% off. Limited stock available - grab yours before they're gone!",
                 'headline': '20% Off - Limited Time',
                 'description': 'Premium quality, unbeatable price',
                 'suggested_cta': 'shop_now'
@@ -358,49 +524,76 @@ Format as JSON array."""
                 'description': 'Made with care, built to last',
                 'suggested_cta': 'shop_now'
             }
-        ]
+        ][:num_variants]
 
     def analyze_performance(self, time_range: str = 'last_7_days') -> Dict[str, Any]:
-        """Analyze account performance and provide insights."""
-        from .facebook_service import FacebookService
-
+        """Analyze account performance using tools."""
         if not self.ad_account:
             return {
                 'error': 'No ad account connected',
                 'insights': []
             }
 
-        # Mock analysis
-        return {
-            'time_range': time_range,
-            'summary': {
-                'total_spend': 1500.00,
-                'total_conversions': 45,
-                'average_roas': 3.2,
-                'trend': 'improving'
-            },
-            'insights': [
-                {
+        try:
+            from ..agents.tools.performance_tools import (
+                GetAccountStatsTool,
+                GetTopPerformersTool,
+                GetUnderperformersTool
+            )
+
+            access_token = self._get_access_token()
+
+            # Get stats
+            stats_tool = GetAccountStatsTool(
+                ad_account=self.ad_account,
+                access_token=access_token
+            )
+            stats = json.loads(stats_tool._run(time_range=time_range))
+
+            # Get top performers
+            top_tool = GetTopPerformersTool(
+                ad_account=self.ad_account,
+                access_token=access_token
+            )
+            top_data = json.loads(top_tool._run(time_range=time_range, limit=5))
+
+            # Get underperformers
+            under_tool = GetUnderperformersTool(
+                ad_account=self.ad_account,
+                access_token=access_token
+            )
+            under_data = json.loads(under_tool._run(time_range=time_range))
+
+            # Build insights
+            insights = []
+
+            if top_data.get('top_performers'):
+                top = top_data['top_performers'][0]
+                insights.append({
                     'type': 'winner',
-                    'message': '"Red Hoodie - Winter Sale" is your top performer with ROAS 4.2x',
-                    'recommendation': 'Consider increasing budget by 30%'
-                },
-                {
-                    'type': 'loser',
-                    'message': '"Old Collection - Generic" has ROAS 0.7x',
-                    'recommendation': 'Consider pausing this campaign'
-                },
-                {
-                    'type': 'opportunity',
-                    'message': 'Your CTR is above industry average',
-                    'recommendation': 'Your ad creative is working well'
-                }
-            ],
-            'top_performers': [
-                {'name': 'Red Hoodie - Winter Sale', 'roas': 4.2, 'spend': 500},
-                {'name': 'Sneaker Collection - Flash', 'roas': 3.1, 'spend': 350}
-            ],
-            'underperformers': [
-                {'name': 'Old Collection - Generic', 'roas': 0.7, 'spend': 200}
-            ]
-        }
+                    'message': f'"{top["name"]}" is your top performer with ROAS {top.get("roas", 0):.1f}x',
+                    'recommendation': 'Consider increasing budget by 20-30%'
+                })
+
+            if under_data.get('underperformers'):
+                for item in under_data['underperformers']:
+                    insights.append({
+                        'type': 'loser',
+                        'message': f'"{item["name"]}" has ROAS {item.get("roas", 0):.1f}x',
+                        'recommendation': item.get('recommendation', 'Consider pausing')
+                    })
+
+            return {
+                'time_range': time_range,
+                'summary': stats,
+                'insights': insights,
+                'top_performers': top_data.get('top_performers', []),
+                'underperformers': under_data.get('underperformers', [])
+            }
+
+        except Exception as e:
+            logger.error(f"Error analyzing performance: {e}", exc_info=True)
+            return {
+                'error': str(e),
+                'insights': []
+            }
