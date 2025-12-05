@@ -22,6 +22,9 @@ class Conversation(db.Model):
     workspace_id = db.Column(db.String(36), db.ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=True)
     workspace_page_id = db.Column(db.String(36), db.ForeignKey('workspace_pages.id', ondelete='CASCADE'), nullable=True)
 
+    # Active product (for page chats)
+    active_product_id = db.Column(db.String(36), db.ForeignKey('products.id', ondelete='SET NULL'), nullable=True)
+
     # Chat type
     chat_type = db.Column(db.Enum(ConversationType), default=ConversationType.LEGACY)
 
