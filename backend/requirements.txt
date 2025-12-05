@@ -33,7 +33,7 @@ python-dotenv==1.0.0
 
 # Utilities
 python-dateutil==2.8.2
-uuid==1.30
+# Note: uuid is built into Python, no package needed
 
 # Development
 pytest==7.4.3
