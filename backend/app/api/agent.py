@@ -57,15 +57,19 @@ def chat():
     db.session.commit()
 
     # Get user context
+    from ..models.facebook import FacebookConnection
+
     preferences = UserPreferences.query.filter_by(user_id=user_id).first()
     primary_account = AdAccount.query.filter_by(user_id=user_id, is_primary=True).first()
+    facebook_connection = FacebookConnection.query.filter_by(user_id=user_id).first()
 
-    # Initialize agent service
+    # Initialize agent service with full context
     agent_service = AgentService(
         user_id=user_id,
         conversation=conversation,
         preferences=preferences,
-        ad_account=primary_account
+        ad_account=primary_account,
+        facebook_connection=facebook_connection
     )
 
     def generate():
@@ -111,8 +115,11 @@ def get_daily_brief():
     user_id = get_jwt_identity()
 
     # Get user context
+    from ..models.facebook import FacebookConnection
+
     preferences = UserPreferences.query.filter_by(user_id=user_id).first()
     primary_account = AdAccount.query.filter_by(user_id=user_id, is_primary=True).first()
+    facebook_connection = FacebookConnection.query.filter_by(user_id=user_id).first()
 
     if not primary_account:
         return jsonify({
@@ -121,12 +128,13 @@ def get_daily_brief():
             'recommendations': []
         })
 
-    # Initialize agent service
+    # Initialize agent service with full context
     agent_service = AgentService(
         user_id=user_id,
         conversation=None,
         preferences=preferences,
-        ad_account=primary_account
+        ad_account=primary_account,
+        facebook_connection=facebook_connection
     )
 
     try:
