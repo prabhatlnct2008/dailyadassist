@@ -54,10 +54,11 @@ def create_app(config_name=None):
 
 def register_blueprints(app):
     """Register Flask blueprints."""
-    from .api import auth, users, onboarding, conversations, agent, drafts, performance, activity
+    from .api import auth, users, onboarding, conversations, agent, drafts, performance, activity, workspaces
 
     app.register_blueprint(auth.bp, url_prefix='/api/auth')
     app.register_blueprint(users.bp, url_prefix='/api/users')
+    app.register_blueprint(workspaces.bp, url_prefix='/api/workspaces')
     app.register_blueprint(onboarding.bp, url_prefix='/api/onboarding')
     app.register_blueprint(conversations.bp, url_prefix='/api/conversations')
     app.register_blueprint(agent.bp, url_prefix='/api/agent')
