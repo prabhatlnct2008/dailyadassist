@@ -54,7 +54,7 @@ def create_app(config_name=None):
 
 def register_blueprints(app):
     """Register Flask blueprints."""
-    from .api import auth, users, onboarding, conversations, agent, drafts, performance, activity, workspaces, products
+    from .api import auth, users, onboarding, conversations, agent, drafts, performance, activity, workspaces, products, workspace_pages
 
     app.register_blueprint(auth.bp, url_prefix='/api/auth')
     app.register_blueprint(users.bp, url_prefix='/api/users')
@@ -66,6 +66,7 @@ def register_blueprints(app):
     app.register_blueprint(performance.bp, url_prefix='/api/performance')
     app.register_blueprint(activity.bp, url_prefix='/api/activity')
     app.register_blueprint(products.bp, url_prefix='/api')
+    app.register_blueprint(workspace_pages.bp, url_prefix='/api')
 
     # Health check endpoint
     @app.route('/api/health')
