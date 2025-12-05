@@ -6,6 +6,8 @@ import logging
 import os
 
 from flask import current_app
+from .memory_service import MemoryRetrievalService
+from .facebook_service import FacebookService
 
 logger = logging.getLogger(__name__)
 
@@ -24,20 +26,51 @@ class AgentService:
         conversation: Optional[Any] = None,
         preferences: Optional[Any] = None,
         ad_account: Optional[Any] = None,
-        facebook_connection: Optional[Any] = None
+        facebook_connection: Optional[Any] = None,
+        workspace_id: Optional[str] = None,
+        page_id: Optional[str] = None,
+        product_id: Optional[str] = None
     ):
-        """Initialize the agent service."""
+        """Initialize the agent service.
+
+        Args:
+            user_id: ID of the user
+            conversation: Current conversation object
+            preferences: User preferences
+            ad_account: Facebook ad account
+            facebook_connection: Facebook connection
+            workspace_id: Optional workspace ID for page-scoped context
+            page_id: Optional workspace page ID for page-scoped context
+            product_id: Optional product ID for product context
+        """
         self.user_id = user_id
         self.conversation = conversation
         self.preferences = preferences
         self.ad_account = ad_account
         self.facebook_connection = facebook_connection
 
+        # NEW: Page-based context
+        self.workspace_id = workspace_id
+        self.page_id = page_id
+        self.product_id = product_id
+
         # Track initialization status
         self.llm = None
         self.llm_error = None
         self.tools = []
         self.agent_executor = None
+
+        # Initialize memory service
+        facebook_service = None
+        if facebook_connection:
+            try:
+                access_token = facebook_connection.get_access_token()
+                if access_token:
+                    facebook_service = FacebookService(access_token)
+            except Exception as e:
+                logger.warning(f"Could not initialize Facebook service: {e}")
+
+        self.memory_service = MemoryRetrievalService(facebook_service=facebook_service)
 
         # Initialize components
         self._init_llm()
@@ -152,7 +185,10 @@ class AgentService:
         state = self.conversation.state if self.conversation else 'idle'
         has_account = 'Yes' if self.ad_account else 'No'
 
-        return f"""You are the Daily Ad Agent, an AI Senior Media Buyer and Facebook Ads Strategist.
+        # NEW: Get page context if available
+        page_context = self._get_page_context_for_prompt()
+
+        base_prompt = f"""You are the Daily Ad Agent, an AI Senior Media Buyer and Facebook Ads Strategist.
 
 ## Your Persona
 - Tone: {tone}
@@ -164,6 +200,8 @@ class AgentService:
 - Default Daily Budget: {currency} {budget}
 - Current Conversation State: {state}
 - Ad Account Connected: {has_account}
+
+{page_context}
 
 ## Your Capabilities (Use the tools provided!)
 
@@ -208,6 +246,91 @@ class AgentService:
    - Explain your reasoning
 
 5. **Keep responses concise** but informative. Use markdown for structure."""
+
+        return base_prompt
+
+    def _get_page_context_for_prompt(self) -> str:
+        """Get page-specific context for the system prompt.
+
+        Returns:
+            Formatted string with page context for the prompt
+        """
+        if not self.conversation:
+            return ""
+
+        from ..models.conversation import ConversationType
+
+        # Get chat type from conversation
+        chat_type = self.conversation.chat_type if hasattr(self.conversation, 'chat_type') else None
+
+        if not chat_type or chat_type == ConversationType.LEGACY:
+            return ""
+
+        # Get context from memory service
+        try:
+            context = self.memory_service.get_context_for_chat(
+                chat_type=chat_type,
+                workspace_id=self.workspace_id or self.conversation.workspace_id,
+                page_id=self.page_id or self.conversation.workspace_page_id,
+                product_id=self.product_id
+            )
+
+            if chat_type == ConversationType.PAGE_WAR_ROOM:
+                page_settings = context.get('page_settings', {})
+                active_product = context.get('active_product', {})
+                page_products = context.get('page_products', [])
+
+                prompt_parts = ["\n## Current Page War Room Context"]
+
+                if page_settings:
+                    page_name = page_settings.get('page_name', 'Unknown Page')
+                    page_tone = page_settings.get('default_tone', 'friendly')
+                    page_cta = page_settings.get('default_cta_style', 'Not set')
+                    target_markets = ', '.join(page_settings.get('target_markets', [])) or 'Not specified'
+
+                    prompt_parts.append(f"""
+**Page**: {page_name}
+**Preferred Tone**: {page_tone}
+**Preferred CTA Style**: {page_cta}
+**Target Markets**: {target_markets}
+""")
+
+                if active_product:
+                    prompt_parts.append(f"""
+**Active Product**: {active_product.get('name')}
+- Description: {active_product.get('short_description', 'N/A')}
+- Price: {active_product.get('currency')} {active_product.get('price', 'N/A')}
+- USP: {active_product.get('usp', 'N/A')}
+- Target Audience: {active_product.get('target_audience', 'N/A')}
+""")
+
+                if page_products:
+                    product_names = [p.get('name') for p in page_products[:5]]
+                    prompt_parts.append(f"\n**Available Products**: {', '.join(product_names)}")
+
+                return '\n'.join(prompt_parts)
+
+            elif chat_type == ConversationType.ACCOUNT_OVERVIEW:
+                workspace_summary = context.get('workspace_summary', {})
+
+                if workspace_summary:
+                    workspace_name = workspace_summary.get('workspace_name', 'Unknown Workspace')
+                    pages_count = workspace_summary.get('pages_count', 0)
+                    products_count = workspace_summary.get('products_count', 0)
+
+                    return f"""
+## Account Overview Context
+**Workspace**: {workspace_name}
+**Pages**: {pages_count} active pages
+**Products**: {products_count} active products
+
+You are providing cross-page insights and recommendations for the entire workspace.
+"""
+
+        except Exception as e:
+            logger.error(f"Error getting page context for prompt: {e}", exc_info=True)
+
+        return ""
 
     def _get_conversation_history(self) -> list:
         """Get conversation history as LangChain messages."""
@@ -599,4 +722,122 @@ Return ONLY a valid JSON array, no other text."""
             return {
                 'error': str(e),
                 'insights': []
+            }
+
+    def generate_workspace_daily_brief(self, workspace_id: str, user_id: str) -> Dict[str, Any]:
+        """Generate workspace-scoped daily brief with per-page performance.
+
+        Args:
+            workspace_id: ID of the workspace
+            user_id: ID of the user
+
+        Returns:
+            Dictionary with workspace daily brief
+        """
+        try:
+            from ..models.workspace import Workspace, WorkspacePage
+
+            workspace = Workspace.query.get(workspace_id)
+            if not workspace:
+                return {
+                    'message': 'Workspace not found',
+                    'has_data': False,
+                    'recommendations': []
+                }
+
+            if not workspace.ad_account_id:
+                return {
+                    'message': f"Welcome to {workspace.name}! Connect your Facebook Ad Account to get personalized performance insights.",
+                    'has_data': False,
+                    'recommendations': []
+                }
+
+            # Get workspace context from memory service
+            from ..models.conversation import ConversationType
+            context = self.memory_service.get_context_for_chat(
+                chat_type=ConversationType.ACCOUNT_OVERVIEW,
+                workspace_id=workspace_id
+            )
+
+            workspace_summary = context.get('workspace_summary', {})
+            all_pages_performance = context.get('all_pages_performance', [])
+
+            # Build the daily brief message
+            message_parts = [f"Good morning! Here's your daily summary for **{workspace.name}**:\n"]
+
+            # Overall workspace stats
+            if workspace_summary:
+                pages_count = workspace_summary.get('pages_count', 0)
+                products_count = workspace_summary.get('products_count', 0)
+                message_parts.append(f"**Workspace Overview:**")
+                message_parts.append(f"- Active Pages: {pages_count}")
+                message_parts.append(f"- Active Products: {products_count}")
+                message_parts.append(f"- Default Budget: {workspace_summary.get('default_currency')} {workspace_summary.get('default_daily_budget')}/day\n")
+
+            # Per-page performance
+            if all_pages_performance:
+                message_parts.append("**Page Performance (Last 7 Days):**\n")
+
+                for page_data in all_pages_performance:
+                    page_name = page_data.get('page_name', 'Unknown Page')
+                    performance = page_data.get('performance', {})
+
+                    if performance.get('error'):
+                        message_parts.append(f"- **{page_name}**: Data unavailable")
+                    elif performance.get('message'):
+                        message_parts.append(f"- **{page_name}**: {performance.get('message')}")
+                    else:
+                        spend = performance.get('spend', 0)
+                        impressions = performance.get('impressions', 0)
+                        clicks = performance.get('clicks', 0)
+                        roas = performance.get('roas', 0)
+                        message_parts.append(
+                            f"- **{page_name}**: ${spend:.2f} spend, {impressions:,} impressions, "
+                            f"{clicks} clicks, {roas:.1f}x ROAS"
+                        )
+
+            else:
+                message_parts.append("\n*No performance data available yet. Start running campaigns to see insights!*")
+
+            message_parts.append("\n\nWhat would you like to focus on today?")
+
+            message = '\n'.join(message_parts)
+
+            # Generate recommendations
+            recommendations = []
+
+            # Check for high-performing pages
+            for page_data in all_pages_performance:
+                performance = page_data.get('performance', {})
+                roas = performance.get('roas', 0)
+
+                if roas > 3:
+                    recommendations.append({
+                        'type': 'scale',
+                        'page': page_data.get('page_name'),
+                        'action': f'Consider increasing budget for {page_data.get("page_name")}',
+                        'rationale': f'ROAS of {roas:.1f}x is excellent'
+                    })
+                elif roas < 1 and performance.get('spend', 0) > 100:
+                    recommendations.append({
+                        'type': 'optimize',
+                        'page': page_data.get('page_name'),
+                        'action': f'Review campaigns for {page_data.get("page_name")}',
+                        'rationale': f'ROAS of {roas:.1f}x needs improvement'
+                    })
+
+            return {
+                'message': message,
+                'has_data': len(all_pages_performance) > 0,
+                'workspace_summary': workspace_summary,
+                'pages_performance': all_pages_performance,
+                'recommendations': recommendations
+            }
+
+        except Exception as e:
+            logger.error(f"Error generating workspace daily brief: {e}", exc_info=True)
+            return {
+                'message': f"Good morning! I had trouble generating your workspace summary. Error: {str(e)}",
+                'has_data': False,
+                'recommendations': []
             }
