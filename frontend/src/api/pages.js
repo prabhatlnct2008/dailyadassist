@@ -1,8 +1,8 @@
 import client from './client';
 
 export const pagesApi = {
-  // List all workspace pages
-  listWorkspacePages: async (workspaceId) => {
+  // Get all pages for a workspace
+  getWorkspacePages: async (workspaceId) => {
     const response = await client.get(`/workspaces/${workspaceId}/pages`);
     return response.data;
   },
@@ -22,7 +22,7 @@ export const pagesApi = {
     return response.data;
   },
 
-  // Get products for a specific page
+  // Get products for a page
   getPageProducts: async (workspaceId, pageId) => {
     const response = await client.get(`/workspaces/${workspaceId}/pages/${pageId}/products`);
     return response.data;

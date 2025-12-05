@@ -1,47 +1,27 @@
 import client from './client';
 
 export const workspacesApi = {
-  // List all workspaces
-  listWorkspaces: async () => {
+  // Get all workspaces
+  getWorkspaces: async () => {
     const response = await client.get('/workspaces');
     return response.data;
   },
 
-  // Create a new workspace
+  // Get a specific workspace with details
+  getWorkspace: async (workspaceId) => {
+    const response = await client.get(`/workspaces/${workspaceId}`);
+    return response.data;
+  },
+
+  // Create a workspace
   createWorkspace: async (data) => {
     const response = await client.post('/workspaces', data);
     return response.data;
   },
 
-  // Get a specific workspace
-  getWorkspace: async (id) => {
-    const response = await client.get(`/workspaces/${id}`);
-    return response.data;
-  },
-
   // Update a workspace
-  updateWorkspace: async (id, data) => {
-    const response = await client.put(`/workspaces/${id}`, data);
-    return response.data;
-  },
-
-  // Delete a workspace
-  deleteWorkspace: async (id) => {
-    const response = await client.delete(`/workspaces/${id}`);
-    return response.data;
-  },
-
-  // Activate a workspace
-  activateWorkspace: async (id) => {
-    const response = await client.post(`/workspaces/${id}/activate`);
-    return response.data;
-  },
-
-  // Setup pages for a workspace
-  setupPages: async (workspaceId, pages) => {
-    const response = await client.post(`/workspaces/${workspaceId}/pages/setup`, {
-      pages,
-    });
+  updateWorkspace: async (workspaceId, data) => {
+    const response = await client.put(`/workspaces/${workspaceId}`, data);
     return response.data;
   },
 };
