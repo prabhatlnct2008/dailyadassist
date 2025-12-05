@@ -11,6 +11,8 @@ import { LoginPage } from './features/auth/LoginPage';
 import { AuthCallback } from './features/auth/AuthCallback';
 import { SetupWizard } from './features/onboarding/SetupWizard';
 import { WarRoom } from './features/warroom/WarRoom';
+import { AccountOverview } from './features/warroom/AccountOverview';
+import { PageChat } from './features/warroom/PageChat';
 import { SettingsPage } from './features/settings/SettingsPage';
 
 const queryClient = new QueryClient({
@@ -77,6 +79,7 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+      {/* App routes with nested routing */}
       <Route
         path="/app"
         element={
@@ -86,7 +89,26 @@ function AppRoutes() {
             </ConversationProvider>
           </ProtectedRoute>
         }
-      />
+      >
+        {/* Default redirect to overview */}
+        <Route index element={<Navigate to="/app/overview" replace />} />
+
+        {/* Account overview route */}
+        <Route path="overview" element={<AccountOverview />} />
+
+        {/* Page-specific chat route */}
+        <Route path="page/:pageId" element={<PageChat />} />
+
+        {/* Archive route (placeholder for future) */}
+        <Route
+          path="archive"
+          element={
+            <div className="flex items-center justify-center h-full">
+              <p className="text-gray-500">Archive feature coming soon</p>
+            </div>
+          }
+        />
+      </Route>
 
       {/* Catch all */}
       <Route path="*" element={<Navigate to="/" replace />} />
