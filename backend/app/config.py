@@ -46,7 +46,7 @@ class Config:
 class DevelopmentConfig(Config):
     """Development configuration."""
     DEBUG = True
-    SQLALCHEMY_ECHO = True
+    SQLALCHEMY_ECHO = False  # Logs go to file instead of console
 
 
 class ProductionConfig(Config):
