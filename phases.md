@@ -1,331 +1,408 @@
-# Project Status: Daily Ad Agent
+# Project Status: Page-Based Chat Model
 
-## Current Phase: Initial Implementation Complete
-
----
-
-## Phase 1: Backend Scaffolding
-**Goal:** Set up Flask project structure with SQLite database
-
-- [x] Create Flask project structure
-- [x] Configure Flask app factory pattern
-- [x] Set up SQLAlchemy with SQLite
-- [x] Configure Flask-Migrate for migrations
-- [x] Set up Flask-CORS
-- [x] Create configuration classes (dev/prod)
-- [x] Create requirements.txt with dependencies
-- [x] Create .env.example template
-- [x] Set up basic error handlers
-- [x] Create run.py entry point
+## Current Phase: Not Started
 
 ---
 
-## Phase 2: Database Models
-**Goal:** Implement all SQLAlchemy models
+## Previous Implementation (Complete)
 
-- [x] User model
-- [x] FacebookConnection model
-- [x] AdAccount model
-- [x] FacebookPage model
-- [x] UserPreferences model
-- [x] Conversation model
-- [x] Message model
-- [x] AdDraft model
-- [x] PublishedCampaign model
-- [x] PerformanceSnapshot model
-- [x] ActivityLog model
-- [x] PastWinner model
-- [x] Create initial migration
-- [x] Run migration to create tables
+The initial Daily Ad Agent implementation is complete. See git history for details:
+- Backend scaffolding (Flask, SQLAlchemy, JWT auth)
+- Database models (User, Conversation, Message, AdDraft, etc.)
+- Authentication (Google OAuth, Facebook OAuth)
+- Multi-agent system (Orchestrator, Performance Analyst, Copywriter, etc.)
+- War Room UI (Chat, Live Stage, Performance tabs)
+- Settings and Onboarding
 
 ---
 
-## Phase 3: Authentication System
-**Goal:** Implement Google OAuth and Facebook OAuth
+## Page-Based Chat Model Implementation
 
-- [x] Set up Flask-JWT-Extended
-- [x] Implement Google OAuth flow
-  - [x] Login route
-  - [x] Callback handler
-  - [x] Token generation
-- [x] Implement Facebook OAuth flow
-  - [x] Connect route
-  - [x] Callback handler
-  - [x] Token storage (encrypted)
-- [x] Create auth decorators
-- [x] Implement /me endpoint
-- [x] Implement logout
-- [x] Create Pydantic schemas for auth
+### Overview
+
+Transform from generic chat to page-centric architecture:
+- **Workspace** model (1 per user in UI, multiple in schema)
+- **Product** catalog with images
+- **Page-scoped War Room** chats
+- **Account Overview** cross-page chat
+- **Legacy conversation** archival with pinned summaries
 
 ---
 
-## Phase 4: User & Onboarding APIs
-**Goal:** Implement user management and onboarding endpoints
+## Phase 1: Database Foundation
+**Goal:** Create new models and migrations
 
-- [x] User preferences CRUD
-- [x] Ad accounts listing
-- [x] Set primary ad account
-- [x] Facebook pages listing
-- [x] Set primary page
-- [x] Onboarding status endpoint
-- [x] Complete onboarding step endpoint
-- [x] Create Pydantic schemas
+### Backend Models
+- [ ] Create `Workspace` model (`backend/app/models/workspace.py`)
+- [ ] Create `WorkspacePage` model (page-workspace linkage with settings)
+- [ ] Create `Product` model (`backend/app/models/product.py`)
+- [ ] Create `PageProduct` model (product-page tagging)
+- [ ] Add `ConversationType` enum to conversation model
+- [ ] Modify `Conversation` model (add chat_type, workspace_id, page_id, archive fields)
+- [ ] Modify `User` model (add workspaces relationship, active_workspace_id)
+- [ ] Modify `FacebookPage` model (add workspace_pages relationship)
+- [ ] Modify `AdAccount` model (add workspace relationship)
+- [ ] Update `models/__init__.py` to export new models
 
----
+### Database Migrations
+- [ ] Create Alembic migration for new tables (workspaces, products, workspace_pages, page_products)
+- [ ] Create Alembic migration for Conversation modifications
+- [ ] Create Alembic migration for User modifications
+- [ ] Test migrations (upgrade/downgrade)
 
-## Phase 5: Conversation & Message APIs
-**Goal:** Implement conversation management
-
-- [x] List conversations
-- [x] Create conversation
-- [x] Get conversation with messages
-- [x] Send message endpoint
-- [x] Get messages (paginated)
-- [x] Create Pydantic schemas
-
----
-
-## Phase 6: Agentic Core Setup
-**Goal:** Set up LangChain-based agent architecture
-
-- [x] Set up LangChain with OpenAI/Claude
-- [x] Create Orchestrator agent
-  - [x] System prompt
-  - [x] Tool bindings
-  - [x] State management
-- [x] Create Performance Analyst sub-agent
-- [x] Create Creative Strategist sub-agent
-- [x] Create Copywriter sub-agent
-- [x] Create Execution sub-agent
-- [x] Create QA/Safety sub-agent
-- [x] Implement agent memory (short-term)
-- [x] Implement agent memory (long-term)
-- [x] Create conversation state machine
+### Schemas
+- [ ] Create `WorkspaceCreate`, `WorkspaceUpdate`, `WorkspaceResponse` schemas
+- [ ] Create `ProductCreate`, `ProductUpdate`, `ProductResponse` schemas
+- [ ] Create `WorkspacePageResponse`, `PageSettingsUpdate` schemas
+- [ ] Create `PageSetupRequest`, `PageSetupItem` schemas
+- [ ] Update `ConversationResponse` schema with new fields
 
 ---
 
-## Phase 7: Agent Tools - Performance
-**Goal:** Implement performance analysis tools
+## Phase 2: Backend API - Workspaces
+**Goal:** Implement workspace CRUD endpoints
 
-- [x] get_ad_account_stats tool
-- [x] get_top_performers tool
-- [x] get_underperformers tool
-- [x] summarize_performance tool
-- [x] Mock Facebook API responses for development
+### Workspace Blueprint (`/api/workspaces`)
+- [ ] Create `backend/app/api/workspaces.py` blueprint
+- [ ] GET `/` - List user workspaces
+- [ ] POST `/` - Create workspace
+- [ ] GET `/<id>` - Get workspace detail (with pages, products)
+- [ ] PUT `/<id>` - Update workspace
+- [ ] DELETE `/<id>` - Delete workspace
+- [ ] POST `/<id>/activate` - Set active workspace
+- [ ] Register blueprint in app factory
 
----
-
-## Phase 8: Agent Tools - Creative
-**Goal:** Implement creative generation tools
-
-- [x] generate_creative_briefs tool
-- [x] generate_ad_copy tool
-- [x] suggest_audiences tool
-- [x] search_stock_images tool (Unsplash/Pexels integration)
-
----
-
-## Phase 9: Agent Tools - Execution
-**Goal:** Implement campaign execution tools
-
-- [x] update_preview_state tool
-- [x] save_draft tool
-- [x] get_current_draft tool
-- [x] publish_campaign tool
-- [x] adjust_budget tool
-- [x] pause_items tool
-- [x] log_decision tool
-- [x] simulate_results tool
+### Workspace-Facebook Integration
+- [ ] POST `/<id>/connect-facebook` - Initiate FB OAuth for workspace
+- [ ] Update Facebook callback to link to workspace
+- [ ] POST `/<id>/setup-pages` - Configure pages after FB connect
 
 ---
 
-## Phase 10: Agent Chat Endpoint
-**Goal:** Implement streaming chat endpoint
+## Phase 3: Backend API - Products
+**Goal:** Implement product CRUD endpoints
 
-- [x] Create /api/agent/chat endpoint
-- [x] Implement streaming response
-- [x] Handle tool execution
-- [x] Update conversation state
-- [x] Implement daily brief endpoint
-- [x] Error handling and fallbacks
-
----
-
-## Phase 11: Draft & Performance APIs
-**Goal:** Implement remaining backend endpoints
-
-- [x] Draft CRUD endpoints
-- [x] Publish draft endpoint
-- [x] Draft variants endpoint
-- [x] Performance summary endpoint
-- [x] Top performers endpoint
-- [x] Underperformers endpoint
-- [x] Campaign metrics endpoint
+### Product Endpoints (`/api/workspaces/<workspace_id>/products`)
+- [ ] Create `backend/app/api/products.py` blueprint
+- [ ] GET `/` - List workspace products
+- [ ] POST `/` - Create product
+- [ ] GET `/<id>` - Get product
+- [ ] PUT `/<id>` - Update product
+- [ ] DELETE `/<id>` - Delete product
+- [ ] POST `/<id>/tag-pages` - Tag product to pages
+- [ ] Register blueprint in app factory
 
 ---
 
-## Phase 12: Activity & Recommendations APIs
-**Goal:** Implement activity tracking
+## Phase 4: Backend API - Page Settings
+**Goal:** Implement page settings endpoints
 
-- [x] Activity log listing
-- [x] Recommendations listing
-- [x] Apply recommendation endpoint
-
----
-
-## Phase 13: React Frontend Setup
-**Goal:** Set up React project with Tailwind
-
-- [x] Create React project with Vite
-- [x] Set up Tailwind CSS
-- [x] Configure React Router
-- [x] Set up Axios with interceptors
-- [x] Set up React Query
-- [x] Create API client modules
-- [x] Create base layout components
+### Page Settings Endpoints (`/api/workspaces/<workspace_id>/pages`)
+- [ ] Create `backend/app/api/workspace_pages.py` blueprint
+- [ ] GET `/` - List workspace pages with settings
+- [ ] GET `/<id>` - Get page detail with settings
+- [ ] PUT `/<id>/settings` - Update page settings (tone, CTA, markets)
+- [ ] GET `/<id>/products` - Get products tagged to page
+- [ ] Register blueprint in app factory
 
 ---
 
-## Phase 14: Auth & Onboarding UI
-**Goal:** Implement login and onboarding screens
+## Phase 5: Backend API - Conversations Update
+**Goal:** Implement page-scoped conversation system
 
-- [x] Login page with Google button
-- [x] Auth context provider
-- [x] Protected routes
-- [x] Setup Wizard container
-- [x] Step 1: Connect Facebook
-- [x] Step 2: Select Ad Account
-- [x] Step 3: Select Facebook Page
-- [x] Step 4: Set Defaults
-- [x] Progress indicator
+### Conversation Endpoint Updates
+- [ ] GET `/workspace/<workspace_id>` - Get all workspace chats
+- [ ] GET `/workspace/<workspace_id>/overview` - Get Account Overview chat
+- [ ] GET `/page/<page_id>` - Get Page War Room chat
+- [ ] GET `/legacy` - Get archived legacy chats
+- [ ] POST `/<id>/archive` - Archive a conversation
 
----
-
-## Phase 15: War Room - Chat Panel
-**Goal:** Implement left panel chat interface
-
-- [x] WarRoom main layout (split screen)
-- [x] ChatPanel container
-- [x] MessageList component
-- [x] AgentMessage bubble
-- [x] UserMessage bubble
-- [x] MessageInput with send button
-- [x] TypingIndicator
-- [x] Streaming message display
-- [x] Auto-scroll behavior
+### Chat Auto-Creation Service
+- [ ] Create `backend/app/services/chat_service.py`
+- [ ] Implement `create_workspace_chats()` function
+- [ ] Implement `create_page_war_room()` for new pages
+- [ ] Implement `get_or_create_overview_chat()`
+- [ ] Hook into workspace setup completion
 
 ---
 
-## Phase 16: War Room - Live Stage
-**Goal:** Implement right panel preview
+## Phase 6: Backend - Agent & Memory Updates
+**Goal:** Implement page-scoped agent context
 
-- [x] LiveStage container with tabs
-- [x] Tabs component (Draft/Performance/Activity)
-- [x] CurrentDraft tab container
-- [x] AdMockup component (Facebook ad preview)
-- [x] VariantSelector component
-- [x] Approve & Publish button
-- [x] PastPerformance tab (table)
-- [x] ActivityLog tab (timeline)
+### Memory Service
+- [ ] Create `backend/app/services/memory_service.py`
+- [ ] Implement `MemoryRetrievalService` class
+- [ ] Implement page-scoped context retrieval
+- [ ] Implement workspace-scoped context retrieval
 
----
+### Agent Updates
+- [ ] Modify `/api/agent/chat` to accept workspace_id, page_id
+- [ ] Update `agent_service.py` to use MemoryRetrievalService
+- [ ] Update `/api/agent/daily-brief/<workspace_id>` for workspace scope
+- [ ] Update `/api/agent/generate-copy` for page scope
+- [ ] Update agent system prompts for page context awareness
 
-## Phase 17: Settings Page
-**Goal:** Implement settings UI
-
-- [x] Settings page layout
-- [x] Account section
-- [x] Facebook connection section
-- [x] Preferences section
-- [x] Save changes functionality
-
----
-
-## Phase 18: Shared Components
-**Goal:** Create reusable UI components
-
-- [x] Button component
-- [x] Input component
-- [x] Select component
-- [x] Modal component
-- [x] Toast notifications
-- [x] Loader/Spinner
-- [x] Tabs component
+### Legacy Migration
+- [ ] Create `backend/app/services/migration_service.py`
+- [ ] Implement `migrate_legacy_conversations()` function
+- [ ] Implement `generate_conversation_summary()` helper
+- [ ] Create pinned summary for Account Overview
 
 ---
 
-## Phase 19: Integration & Polish
-**Goal:** Connect frontend to backend
+## Phase 7: Frontend - Core Infrastructure
+**Goal:** Set up workspace and page context
 
-- [x] Connect auth flow
-- [x] Connect onboarding flow
-- [x] Connect chat to agent API
-- [x] Performance data display
-- [x] Activity log display
-- [x] Error handling UI
-- [x] Loading states
+### Context & State
+- [ ] Create `src/features/workspace/WorkspaceContext.jsx`
+- [ ] Create `src/context/PageContext.jsx`
+- [ ] Update `AuthContext.jsx` to include active workspace
+- [ ] Update `ConversationContext.jsx` for chat types
+
+### API Client
+- [ ] Create `src/api/workspaces.js`
+- [ ] Create `src/api/products.js`
+- [ ] Create `src/api/pages.js`
+- [ ] Update `src/api/conversations.js` for new endpoints
+- [ ] Update `src/api/agent.js` for page context
+
+### Routing
+- [ ] Update `App.jsx` with new routes
+- [ ] Add `/app/overview` route for Account Overview
+- [ ] Add `/app/page/:pageId` route for Page War Room
+- [ ] Add `/app/archive` route for legacy viewer
+- [ ] Update default redirect after login
 
 ---
 
-## Phase 20: Testing & Refinement
-**Goal:** Test and fix issues
+## Phase 8: Frontend - Navigation & Layout
+**Goal:** Implement sidebar navigation
 
-- [ ] Backend unit tests
-- [ ] API integration tests
-- [ ] Frontend component tests
-- [ ] End-to-end flow testing
-- [ ] Fix bugs and edge cases
-- [ ] Performance optimization
-- [ ] Security review
+### Sidebar Component
+- [ ] Create `src/features/navigation/Sidebar.jsx`
+- [ ] Create `AccountOverviewItem.jsx`
+- [ ] Create `PageListItem.jsx`
+- [ ] Add page selection highlight (active state)
+- [ ] Add workspace name header
+
+### War Room Layout Updates
+- [ ] Modify `WarRoom.jsx` to include Sidebar
+- [ ] Create `WarRoomHeader.jsx` with page/product context
+- [ ] Add responsive sidebar toggle for mobile
+- [ ] Update grid layout for sidebar
+
+### Page Settings Drawer
+- [ ] Create `PageSettingsDrawer.jsx`
+- [ ] Implement tone selector dropdown
+- [ ] Implement CTA style selector
+- [ ] Implement target markets multi-select
+- [ ] Hook up to page settings API
+- [ ] Add trigger from page header
+
+---
+
+## Phase 9: Frontend - Chat Views
+**Goal:** Implement page-scoped chat experiences
+
+### Account Overview Chat
+- [ ] Create `AccountOverviewChat.jsx`
+- [ ] Display pinned legacy summary (if exists)
+- [ ] Implement cross-page summary display
+- [ ] Add "Open Page Plan" quick action buttons
+- [ ] Style for overview context
+
+### Page War Room Chat
+- [ ] Create `PageWarRoomChat.jsx`
+- [ ] Add page header strip (active page, product)
+- [ ] Create `ProductSelector.jsx` dropdown
+- [ ] Integrate page context into chat messages
+- [ ] Update preview panel scope text ("Showing for this Page")
+
+### Legacy Archive Viewer
+- [ ] Create `LegacyArchiveViewer.jsx`
+- [ ] Display archived conversations list
+- [ ] Show conversation summaries
+- [ ] Allow read-only viewing of old messages
+- [ ] Add "back to overview" navigation
+
+### Chat Panel Updates
+- [ ] Update `ChatPanel.jsx` for chat type awareness
+- [ ] Modify agent message context for page scope
+- [ ] Update typing indicators per chat
+
+---
+
+## Phase 10: Frontend - Onboarding Flow
+**Goal:** Implement enhanced setup wizard
+
+### Setup Wizard Structure
+- [ ] Refactor `SetupWizard.jsx` for new steps
+- [ ] Add step progress indicator with labels
+- [ ] Implement step navigation (back/next)
+
+### Individual Steps
+- [ ] Create `WorkspaceNameStep.jsx` (Step 1)
+  - [ ] Workspace name input
+  - [ ] Validation
+- [ ] Create `FacebookConnectStep.jsx` (Step 2 - optional)
+  - [ ] "Connect Facebook" button
+  - [ ] "Skip for now" option
+  - [ ] Helper text about ideation mode
+- [ ] Create `AdAccountSelectStep.jsx` (Step 3)
+  - [ ] Ad account dropdown
+  - [ ] Account details preview
+- [ ] Create `PageSelectionStep.jsx` (Step 4)
+  - [ ] Checklist of available pages
+  - [ ] Page avatar preview
+  - [ ] Select all / deselect all
+- [ ] Create `PageSetupStep.jsx` (Step 4b - tone per page)
+  - [ ] Loop through selected pages
+  - [ ] Tone dropdown per page
+  - [ ] Optional: CTA style per page
+- [ ] Create `ProductSetupStep.jsx` (Step 5 - optional)
+  - [ ] Quick add product form
+  - [ ] Product name, USP, price, image
+  - [ ] "Add another" / "Skip" buttons
+- [ ] Update `CompletionStep.jsx`
+  - [ ] Trigger workspace setup completion
+  - [ ] Trigger chat auto-creation
+  - [ ] Redirect to War Room
+
+### Onboarding API Integration
+- [ ] Hook workspace creation to Step 1
+- [ ] Hook Facebook OAuth to Step 2
+- [ ] Hook ad account selection to Step 3
+- [ ] Hook page setup to Steps 4/4b
+- [ ] Hook product creation to Step 5
+- [ ] Call setup-pages endpoint on completion
+
+---
+
+## Phase 11: Frontend - Products
+**Goal:** Implement product management
+
+### Product Components
+- [ ] Create `src/features/products/ProductList.jsx`
+- [ ] Create `ProductCard.jsx`
+- [ ] Create `ProductForm.jsx` (create/edit modal)
+- [ ] Create `ProductTagManager.jsx` (tag to pages)
+- [ ] Create `ProductSelector.jsx` (dropdown for chat header)
+
+### Product Hooks
+- [ ] Create `useProducts.js` query hook
+- [ ] Create `useProductMutations.js` mutation hooks
+
+### Integration Points
+- [ ] Add product management to Settings page
+- [ ] Integrate `ProductSelector` in WarRoomHeader
+- [ ] Show active product context in chat
+- [ ] Pre-fill product in copy generation
+
+---
+
+## Phase 12: Integration & Polish
+**Goal:** End-to-end testing and refinements
+
+### Integration Testing
+- [ ] Test complete onboarding flow (with FB connect)
+- [ ] Test onboarding flow (skip FB connect)
+- [ ] Test page switching in War Room
+- [ ] Test product selection in chat
+- [ ] Test Account Overview daily brief
+- [ ] Test Page War Room ideation flow
+- [ ] Test legacy conversation archival
+- [ ] Test publish flow with page context
+
+### UI/UX Polish
+- [ ] Add loading states to sidebar
+- [ ] Add empty states (no pages, no products)
+- [ ] Improve mobile responsiveness
+- [ ] Add tooltips and help text
+- [ ] Ensure consistent styling across views
+- [ ] Add keyboard shortcuts (optional)
+
+### Error Handling
+- [ ] Add error boundaries
+- [ ] Handle Facebook connection failures gracefully
+- [ ] Handle missing workspace redirect
+- [ ] Add retry logic for failed requests
+- [ ] Show user-friendly error messages
+
+### Performance
+- [ ] Optimize sidebar rendering
+- [ ] Lazy load archive viewer
+- [ ] Cache workspace/pages data
+- [ ] Debounce page settings updates
+
+---
+
+## Phase 13: Documentation & Cleanup
+**Goal:** Finalize implementation
+
+### Documentation
+- [ ] Update API documentation (add new endpoints)
+- [ ] Add inline code comments for complex logic
+- [ ] Update README with new features
+
+### Code Cleanup
+- [ ] Remove unused code/components
+- [ ] Consolidate duplicate logic
+- [ ] Run linter and fix issues
+- [ ] Review and fix TypeScript/prop types (if applicable)
+
+### Final Testing
+- [ ] Full regression test
+- [ ] Test with multiple users
+- [ ] Test edge cases (empty states, errors)
+- [ ] Security review (token handling, auth checks)
 
 ---
 
 ## Completion Checklist
 
-### Epic A - Authentication & Integration
-- [x] A1: Google Sign-In
-- [x] A2: Facebook Ad Account Connection
+### Must-Have (MVP)
+- [ ] Workspace model in schema (1 per user in UI)
+- [ ] Optional Facebook connect during setup
+- [ ] Import pages from Facebook
+- [ ] Auto-create chats (Account Overview + Page War Rooms)
+- [ ] Sidebar with Account + Pages navigation
+- [ ] Page War Room chat + live preview
+- [ ] Product management with images (1-3)
+- [ ] Product selector in chat header
+- [ ] Publish guardrail "connect-to-publish"
+- [ ] Legacy conversation archival with summary
+- [ ] Pinned summary in Account Overview
 
-### Epic B - Onboarding & Settings
-- [x] B1: First-Time Setup Wizard
-- [x] B2: Configurable Defaults
-
-### Epic C - Agentic Core
-- [x] C1: Daily Proactive Trigger
-- [x] C2: Historical Analysis Tool
-- [x] C3: Creative & Copy Generation
-- [x] C4: Multi-Tool Reasoning
-
-### Epic D - War Room Interface
-- [x] D1: Split-Screen Workflow
-- [x] D2: Edit & Feedback Loop
-- [x] D3: Manual Edit
-- [x] D4: Past Performance View
-
-### Epic E - Campaign Execution & Safety
-- [x] E1: Approve & Publish Command
-- [x] E2: Safety Guardrails
-- [x] E3: Post-Publish Summary
-
-### Epic F - Reporting & Learning Loop
-- [x] F1: Daily Performance Summary
-- [x] F2: Recommendations Based on Learnings
-- [x] F3: Activity Log
+### Deferred to V2
+- [ ] Multi-workspace UI (switcher)
+- [ ] Campaign sub-threads
+- [ ] Page-specific audience templates
+- [ ] Cross-page budget automation
+- [ ] Advanced analytics dashboard
 
 ---
 
-## Notes
+## Notes & Decisions Log
 
-- Using Flask instead of FastAPI per user request
-- SQLite for database (easy deployment on PythonAnywhere)
-- React with Tailwind for frontend
-- LangChain for agent orchestration
-- Mock Facebook API for development (real integration requires FB app approval)
+| Date | Decision | Rationale |
+|------|----------|-----------|
+| 2024-12-05 | Multiple workspaces in schema, single in UI | Future-proof without UI complexity |
+| 2024-12-05 | 3 product image fields (URLs) | Simple, no file upload needed |
+| 2024-12-05 | Archive legacy conversations, don't delete | Preserve user history |
+| 2024-12-05 | No Campaign Threads in MVP | Reduce scope for faster delivery |
+| 2024-12-05 | Pin legacy summary to Account Overview | Clean UX, easy access |
 
-## Next Steps
+---
 
-1. Set up environment variables with actual API keys
-2. Test the complete flow end-to-end
-3. Deploy backend to PythonAnywhere
-4. Deploy frontend (Vercel/Netlify or PythonAnywhere static)
-5. Create Facebook App for OAuth (requires business verification)
+## Blockers & Issues
+
+_None currently_
+
+---
+
+## Session Log
+
+| Session | Phase | Tasks Completed | Notes |
+|---------|-------|-----------------|-------|
+| 2024-12-05 | Planning | Created plan.md, phases.md | Initial architecture design |
+| - | - | - | Implementation not started |
