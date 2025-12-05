@@ -37,6 +37,12 @@ class UserPreferences(db.Model):
     id = db.Column(db.String(36), primary_key=True)
     user_id = db.Column(db.String(36), db.ForeignKey('users.id', ondelete='CASCADE'), unique=True, nullable=False)
 
+    # Business/Product info (used by agent for creative generation)
+    business_name = db.Column(db.String(255), nullable=True)
+    product_description = db.Column(db.Text, nullable=True)  # What they're advertising
+    target_audience = db.Column(db.Text, nullable=True)  # Who they're targeting
+    unique_selling_points = db.Column(db.Text, nullable=True)  # Key differentiators
+
     default_daily_budget = db.Column(db.Float, default=50.0)
     default_currency = db.Column(db.String(10), default='USD')
     default_geo = db.Column(db.String(100), default='US')
