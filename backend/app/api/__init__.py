@@ -1,5 +1,5 @@
 """API blueprints package."""
-from . import auth, users, onboarding, conversations, agent, drafts, performance, activity
+from . import auth, users, onboarding, conversations, agent, drafts, performance, activity, products
 
 __all__ = [
     'auth',
@@ -9,5 +9,6 @@ __all__ = [
     'agent',
     'drafts',
     'performance',
-    'activity'
+    'activity',
+    'products'
 ]

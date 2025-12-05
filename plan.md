@@ -1,21 +1,32 @@
-# Implementation Plan: Daily Ad Agent
+# Implementation Plan: Page-Based Chat Model
+
+> **Previous Implementation**: The Daily Ad Agent backend and frontend are complete (see phases.md history). This plan covers the architectural refactoring to a **page-centric chat model**.
 
 ## 1. System Overview
 
-Daily Ad Agent is a conversational AI assistant that acts as a Senior Media Buyer for Facebook Ads. The system proactively analyzes past performance, suggests creative & copy, and manages Facebook ad campaigns through a chat-based "War Room" interface.
+Transform the Daily Ad Agent from a generic chat model to a **page-centric chat architecture** where:
+- **Workspace** = 1 Facebook Ad Account (schema supports multiple, UI starts with 1)
+- **Chat Types**: Account Overview (1 per workspace) + Page War Room (1 per page)
+- **Products** belong to workspace, optionally tagged to pages
+- **Agent memory** is page-scoped for contextual relevance
+- **Legacy conversations** archived with pinned summary in Account Overview
 
-### Core Capabilities:
-- **Proactive Daily Engagement**: Agent initiates conversations based on performance data
-- **Multi-Agent Architecture**: Orchestrator + specialized sub-agents for different tasks
-- **Facebook Integration**: Full campaign creation, management, and analysis
-- **War Room Interface**: Split-screen chat + live ad preview
+### Core Principles
+1. Each Facebook Page gets its own dedicated "War Room" chat
+2. Account Overview provides cross-page insights and recommendations
+3. No "New Chat" button - chats are auto-created based on structure
+4. Campaign Threads deferred to V2
 
-### Tech Stack:
-- **Backend**: Python/Flask
-- **Database**: SQLite with SQLAlchemy ORM
-- **Frontend**: React with Tailwind CSS
-- **AI/LLM**: LangChain with OpenAI/Claude for agentic reasoning
-- **Authentication**: Google OAuth + Facebook OAuth
+### What Changes
+| Component | Current State | Required State |
+|-----------|--------------|----------------|
+| **Workspace** | Missing | 1 per user (schema: multiple), links to 1 Ad Account |
+| **Product** | Missing | Multi-product support with 1-3 images, tagged to pages |
+| **Conversation** | Generic threads | 3 types: Account Overview, Page War Room, Legacy |
+| **FacebookPage** | Basic model | Enhanced via WorkspacePage: tone, CTA style, product tags |
+| **Chat Navigation** | Single chat | Sidebar with Account + Pages list |
+| **Agent Memory** | Product-based | Page-scoped with fallback hierarchy |
+| **Onboarding** | Basic flow | Multi-step wizard with page selection |
 
 ---
 
@@ -23,600 +34,780 @@ Daily Ad Agent is a conversational AI assistant that acts as a Senior Media Buye
 
 ### 2.1 Database Models (SQLAlchemy)
 
+#### NEW: Workspace Model
+```python
+# backend/app/models/workspace.py
+
+class Workspace(db.Model):
+    __tablename__ = 'workspaces'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id = Column(String(36), ForeignKey('users.id'), nullable=False)
+    name = Column(String(255), nullable=False)  # e.g., "Red & Co Apparel"
+
+    # Facebook connection (1 ad account per workspace)
+    ad_account_id = Column(String(36), ForeignKey('ad_accounts.id'), nullable=True)
+
+    # Defaults
+    default_daily_budget = Column(Float, default=500.0)
+    default_currency = Column(String(10), default='INR')
+    default_objective = Column(String(50), default='CONVERSIONS')
+    timezone = Column(String(50), default='Asia/Kolkata')
+
+    # Status
+    is_active = Column(Boolean, default=True)
+    facebook_connected = Column(Boolean, default=False)
+    setup_completed = Column(Boolean, default=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    user = relationship('User', back_populates='workspaces')
+    ad_account = relationship('AdAccount', back_populates='workspace')
+    products = relationship('Product', back_populates='workspace', cascade='all, delete-orphan')
+    pages = relationship('WorkspacePage', back_populates='workspace', cascade='all, delete-orphan')
+    conversations = relationship('Conversation', back_populates='workspace', cascade='all, delete-orphan')
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Database Schema                           │
-└─────────────────────────────────────────────────────────────────┘
 
-User
-├── id: String (UUID, PK)
-├── email: String (unique, indexed)
-├── google_id: String (unique)
-├── name: String
-├── profile_picture_url: String (nullable)
-├── created_at: DateTime
-├── last_login_at: DateTime
-└── is_active: Boolean (default=True)
+#### NEW: Product Model
+```python
+# backend/app/models/product.py
 
-FacebookConnection
-├── id: String (UUID, PK)
-├── user_id: String (FK -> User.id, cascade delete)
-├── access_token: String (encrypted)
-├── token_expires_at: DateTime
-├── facebook_user_id: String
-├── created_at: DateTime
-└── updated_at: DateTime
+class Product(db.Model):
+    __tablename__ = 'products'
 
-AdAccount
-├── id: String (UUID, PK)
-├── user_id: String (FK -> User.id, cascade delete)
-├── facebook_account_id: String
-├── name: String
-├── currency: String
-├── timezone: String
-├── is_primary: Boolean (default=False)
-├── created_at: DateTime
-└── updated_at: DateTime
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String(36), ForeignKey('workspaces.id'), nullable=False)
 
-FacebookPage
-├── id: String (UUID, PK)
-├── user_id: String (FK -> User.id, cascade delete)
-├── facebook_page_id: String
-├── name: String
-├── profile_picture_url: String
-├── is_primary: Boolean (default=False)
-├── created_at: DateTime
-└── updated_at: DateTime
+    # Core fields
+    name = Column(String(255), nullable=False)
+    short_description = Column(Text, nullable=True)
+    long_description = Column(Text, nullable=True)
 
-UserPreferences
-├── id: String (UUID, PK)
-├── user_id: String (FK -> User.id, unique, cascade delete)
-├── default_daily_budget: Float
-├── default_currency: String (default='USD')
-├── default_geo: String (default='US')
-├── default_tone: Enum('friendly', 'professional', 'bold', 'casual')
-├── default_objective: Enum('conversions', 'traffic', 'engagement', 'awareness')
-├── timezone: String (default='UTC')
-├── onboarding_completed: Boolean (default=False)
-├── created_at: DateTime
-└── updated_at: DateTime
+    # Pricing
+    price = Column(Float, nullable=True)
+    price_range_min = Column(Float, nullable=True)
+    price_range_max = Column(Float, nullable=True)
+    currency = Column(String(10), default='INR')
 
-Conversation
-├── id: String (UUID, PK)
-├── user_id: String (FK -> User.id, cascade delete)
-├── title: String (nullable)
-├── state: Enum('idle', 'discovery', 'ideation', 'drafting', 'review', 'ready_to_publish', 'published')
-├── context: JSON (stores current campaign context)
-├── created_at: DateTime
-└── updated_at: DateTime
+    # Marketing
+    usp = Column(Text, nullable=True)  # Unique Selling Proposition
+    target_audience = Column(Text, nullable=True)
+    seasonality = Column(String(100), nullable=True)  # e.g., "winter", "all-year", "festive"
 
-Message
-├── id: String (UUID, PK)
-├── conversation_id: String (FK -> Conversation.id, cascade delete)
-├── role: Enum('user', 'assistant', 'system')
-├── content: Text
-├── metadata: JSON (nullable, stores tool calls, etc.)
-├── created_at: DateTime
-└── is_visible: Boolean (default=True)
+    # Media (1-3 images, all optional)
+    primary_image_url = Column(String(500), nullable=True)
+    image_url_2 = Column(String(500), nullable=True)
+    image_url_3 = Column(String(500), nullable=True)
 
-AdDraft
-├── id: String (UUID, PK)
-├── conversation_id: String (FK -> Conversation.id, cascade delete)
-├── user_id: String (FK -> User.id)
-├── campaign_name: String
-├── ad_set_name: String
-├── ad_name: String
-├── primary_text: Text
-├── headline: String
-├── description: String
-├── cta: Enum('learn_more', 'shop_now', 'sign_up', 'contact_us', 'book_now')
-├── media_url: String (nullable)
-├── media_type: Enum('image', 'video')
-├── target_audience: JSON
-├── budget: Float
-├── budget_type: Enum('daily', 'lifetime')
-├── objective: String
-├── status: Enum('draft', 'approved', 'published', 'rejected')
-├── variant_number: Integer (default=1)
-├── parent_draft_id: String (FK -> AdDraft.id, nullable)
-├── created_at: DateTime
-└── updated_at: DateTime
+    # Tags for filtering
+    tags = Column(JSON, default=list)  # ["hoodie", "winter", "sale"]
 
-PublishedCampaign
-├── id: String (UUID, PK)
-├── user_id: String (FK -> User.id)
-├── ad_draft_id: String (FK -> AdDraft.id)
-├── facebook_campaign_id: String
-├── facebook_adset_id: String
-├── facebook_ad_id: String
-├── ads_manager_url: String
-├── published_at: DateTime
-├── status: Enum('active', 'paused', 'deleted')
-└── created_at: DateTime
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-PerformanceSnapshot
-├── id: String (UUID, PK)
-├── published_campaign_id: String (FK -> PublishedCampaign.id)
-├── date: Date
-├── spend: Float
-├── impressions: Integer
-├── clicks: Integer
-├── ctr: Float
-├── cpc: Float
-├── conversions: Integer
-├── roas: Float
-├── created_at: DateTime
-└── updated_at: DateTime
-
-ActivityLog
-├── id: String (UUID, PK)
-├── user_id: String (FK -> User.id)
-├── action_type: Enum('draft_created', 'draft_updated', 'campaign_published', 'budget_changed', 'campaign_paused', 'recommendation_made', 'recommendation_applied')
-├── entity_type: String (e.g., 'campaign', 'adset', 'ad', 'draft')
-├── entity_id: String
-├── rationale: Text (nullable)
-├── metadata: JSON (nullable)
-├── created_at: DateTime
-└── is_agent_action: Boolean (default=False)
-
-PastWinner
-├── id: String (UUID, PK)
-├── user_id: String (FK -> User.id)
-├── campaign_name: String
-├── ad_content: JSON (stores full ad details)
-├── metrics: JSON (spend, roas, ctr, etc.)
-├── winning_factors: Text (agent analysis)
-├── created_at: DateTime
-└── updated_at: DateTime
+    # Relationships
+    workspace = relationship('Workspace', back_populates='products')
+    page_products = relationship('PageProduct', back_populates='product', cascade='all, delete-orphan')
 ```
+
+#### NEW: WorkspacePage Model (Enhanced Page linkage)
+```python
+# backend/app/models/workspace.py (continued)
+
+class WorkspacePage(db.Model):
+    """Links FacebookPage to Workspace with page-specific settings"""
+    __tablename__ = 'workspace_pages'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    workspace_id = Column(String(36), ForeignKey('workspaces.id'), nullable=False)
+    facebook_page_id = Column(String(36), ForeignKey('facebook_pages.id'), nullable=False)
+
+    # Page-specific settings
+    default_tone = Column(String(50), default='friendly')  # friendly, professional, bold, casual, playful
+    default_cta_style = Column(String(50), nullable=True)  # shop_now, learn_more, sign_up, etc.
+    target_markets = Column(JSON, default=list)  # ["India", "US"]
+
+    # Status
+    is_included = Column(Boolean, default=True)  # User chose to include this page
+    is_primary = Column(Boolean, default=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    workspace = relationship('Workspace', back_populates='pages')
+    facebook_page = relationship('FacebookPage', back_populates='workspace_pages')
+    conversation = relationship('Conversation', back_populates='workspace_page', uselist=False)
+    page_products = relationship('PageProduct', back_populates='workspace_page', cascade='all, delete-orphan')
+
+    # Unique constraint: one page per workspace
+    __table_args__ = (
+        UniqueConstraint('workspace_id', 'facebook_page_id', name='uq_workspace_page'),
+    )
+```
+
+#### NEW: PageProduct Model (Product-Page tagging)
+```python
+# backend/app/models/product.py (continued)
+
+class PageProduct(db.Model):
+    """Associates products with specific pages"""
+    __tablename__ = 'page_products'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    workspace_page_id = Column(String(36), ForeignKey('workspace_pages.id'), nullable=False)
+    product_id = Column(String(36), ForeignKey('products.id'), nullable=False)
+    is_default = Column(Boolean, default=False)  # Default product for this page
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    workspace_page = relationship('WorkspacePage', back_populates='page_products')
+    product = relationship('Product', back_populates='page_products')
+
+    __table_args__ = (
+        UniqueConstraint('workspace_page_id', 'product_id', name='uq_page_product'),
+    )
+```
+
+#### MODIFIED: Conversation Model
+```python
+# backend/app/models/conversation.py (UPDATED)
+
+class ConversationType(str, Enum):
+    ACCOUNT_OVERVIEW = 'account_overview'
+    PAGE_WAR_ROOM = 'page_war_room'
+    LEGACY = 'legacy'  # For migrated old conversations
+
+class Conversation(db.Model):
+    __tablename__ = 'conversations'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id = Column(String(36), ForeignKey('users.id'), nullable=False)
+
+    # NEW: Workspace and Page linkage
+    workspace_id = Column(String(36), ForeignKey('workspaces.id'), nullable=True)
+    workspace_page_id = Column(String(36), ForeignKey('workspace_pages.id'), nullable=True)
+
+    # NEW: Chat type
+    chat_type = Column(SQLEnum(ConversationType), default=ConversationType.LEGACY)
+
+    title = Column(String(255), nullable=True)
+    state = Column(String(50), default='idle')
+    context = Column(JSON, default=dict)
+
+    # NEW: For legacy migration
+    is_archived = Column(Boolean, default=False)
+    archived_at = Column(DateTime, nullable=True)
+    archive_summary = Column(Text, nullable=True)  # AI-generated summary
+
+    # NEW: Pinned status (for Account Overview pinned summaries)
+    is_pinned = Column(Boolean, default=False)
+    pinned_content = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    user = relationship('User', back_populates='conversations')
+    workspace = relationship('Workspace', back_populates='conversations')
+    workspace_page = relationship('WorkspacePage', back_populates='conversation')
+    messages = relationship('Message', back_populates='conversation', cascade='all, delete-orphan')
+    drafts = relationship('AdDraft', back_populates='conversation')
+```
+
+#### MODIFIED: User Model
+```python
+# Add to existing User model in backend/app/models/user.py
+
+# Add these fields:
+active_workspace_id = Column(String(36), ForeignKey('workspaces.id', use_alter=True), nullable=True)
+
+# Add this relationship:
+workspaces = relationship('Workspace', back_populates='user', foreign_keys='Workspace.user_id', cascade='all, delete-orphan')
+active_workspace = relationship('Workspace', foreign_keys=[active_workspace_id], post_update=True)
+```
+
+#### MODIFIED: FacebookPage Model
+```python
+# Add to existing FacebookPage model in backend/app/models/facebook.py
+
+# Add this relationship:
+workspace_pages = relationship('WorkspacePage', back_populates='facebook_page', cascade='all, delete-orphan')
+```
+
+#### MODIFIED: AdAccount Model
+```python
+# Add to existing AdAccount model in backend/app/models/facebook.py
+
+# Add this relationship:
+workspace = relationship('Workspace', back_populates='ad_account', uselist=False)
+```
+
+---
 
 ### 2.2 API Contract (Flask Blueprints)
 
-#### Authentication Routes (`/api/auth`)
+#### Workspace Endpoints (`/api/workspaces`)
+| Method | Endpoint | Request Schema | Response Schema | Description |
+|--------|----------|----------------|-----------------|-------------|
+| GET | `/` | - | `List[WorkspaceResponse]` | List user's workspaces |
+| POST | `/` | `WorkspaceCreate` | `WorkspaceResponse` | Create workspace |
+| GET | `/<id>` | - | `WorkspaceDetailResponse` | Get workspace with pages/products |
+| PUT | `/<id>` | `WorkspaceUpdate` | `WorkspaceResponse` | Update workspace |
+| DELETE | `/<id>` | - | `204` | Delete workspace |
+| POST | `/<id>/activate` | - | `WorkspaceResponse` | Set as active workspace |
+| POST | `/<id>/connect-facebook` | - | `redirect` | Initiate Facebook OAuth for workspace |
+| POST | `/<id>/setup-pages` | `PageSetupRequest` | `WorkspaceResponse` | Configure pages after FB connect |
 
-| Method | Endpoint | Request | Response | Description |
-|--------|----------|---------|----------|-------------|
-| GET | `/google/login` | - | Redirect | Initiates Google OAuth flow |
-| GET | `/google/callback` | OAuth code | JWT Token | Handles Google OAuth callback |
-| GET | `/facebook/connect` | JWT | Redirect | Initiates Facebook OAuth flow |
-| GET | `/facebook/callback` | OAuth code | Connection Status | Handles Facebook callback |
-| POST | `/logout` | JWT | Success | Invalidates session |
-| GET | `/me` | JWT | UserResponse | Returns current user info |
+#### Product Endpoints (`/api/workspaces/<workspace_id>/products`)
+| Method | Endpoint | Request Schema | Response Schema | Description |
+|--------|----------|----------------|-----------------|-------------|
+| GET | `/` | - | `List[ProductResponse]` | List workspace products |
+| POST | `/` | `ProductCreate` | `ProductResponse` | Create product |
+| GET | `/<id>` | - | `ProductResponse` | Get product |
+| PUT | `/<id>` | `ProductUpdate` | `ProductResponse` | Update product |
+| DELETE | `/<id>` | - | `204` | Delete product |
+| POST | `/<id>/tag-pages` | `PageTagRequest` | `ProductResponse` | Tag product to pages |
 
-#### User Routes (`/api/users`)
+#### Page Settings Endpoints (`/api/workspaces/<workspace_id>/pages`)
+| Method | Endpoint | Request Schema | Response Schema | Description |
+|--------|----------|----------------|-----------------|-------------|
+| GET | `/` | - | `List[WorkspacePageResponse]` | List workspace pages with settings |
+| GET | `/<id>` | - | `WorkspacePageDetailResponse` | Get page detail with settings |
+| PUT | `/<id>/settings` | `PageSettingsUpdate` | `WorkspacePageResponse` | Update page settings (tone, CTA, markets) |
+| GET | `/<id>/products` | - | `List[ProductResponse]` | Get products tagged to page |
 
-| Method | Endpoint | Request | Response | Description |
-|--------|----------|---------|----------|-------------|
-| GET | `/preferences` | JWT | PreferencesResponse | Get user preferences |
-| PUT | `/preferences` | PreferencesUpdate | PreferencesResponse | Update preferences |
-| GET | `/ad-accounts` | JWT | List[AdAccountResponse] | Get linked ad accounts |
-| PUT | `/ad-accounts/{id}/primary` | JWT | AdAccountResponse | Set primary ad account |
-| GET | `/pages` | JWT | List[PageResponse] | Get linked Facebook pages |
-| PUT | `/pages/{id}/primary` | JWT | PageResponse | Set primary page |
+#### Modified Conversation Endpoints (`/api/conversations`)
+| Method | Endpoint | Request Schema | Response Schema | Description |
+|--------|----------|----------------|-----------------|-------------|
+| GET | `/workspace/<workspace_id>` | - | `ConversationListResponse` | Get all chats for workspace |
+| GET | `/workspace/<workspace_id>/overview` | - | `ConversationResponse` | Get Account Overview chat |
+| GET | `/page/<page_id>` | - | `ConversationResponse` | Get Page War Room chat |
+| GET | `/legacy` | - | `List[ConversationResponse]` | Get archived legacy chats |
+| POST | `/<id>/archive` | - | `ConversationResponse` | Archive a conversation |
 
-#### Onboarding Routes (`/api/onboarding`)
-
-| Method | Endpoint | Request | Response | Description |
-|--------|----------|---------|----------|-------------|
-| GET | `/status` | JWT | OnboardingStatus | Get onboarding progress |
-| POST | `/complete-step` | StepData | OnboardingStatus | Complete onboarding step |
-
-#### Conversation Routes (`/api/conversations`)
-
-| Method | Endpoint | Request | Response | Description |
-|--------|----------|---------|----------|-------------|
-| GET | `/` | JWT | List[ConversationResponse] | List user conversations |
-| POST | `/` | CreateConversation | ConversationResponse | Start new conversation |
-| GET | `/{id}` | JWT | ConversationWithMessages | Get conversation with messages |
-| POST | `/{id}/messages` | MessageCreate | MessageResponse | Send message to agent |
-| GET | `/{id}/messages` | JWT, pagination | List[MessageResponse] | Get conversation messages |
-
-#### Agent Routes (`/api/agent`)
-
-| Method | Endpoint | Request | Response | Description |
-|--------|----------|---------|----------|-------------|
-| POST | `/chat` | ChatRequest | StreamingResponse | Send message, get streaming response |
-| GET | `/daily-brief` | JWT | DailyBriefResponse | Get proactive daily brief |
-| POST | `/generate-copy` | CopyRequest | CopyVariants | Generate ad copy variants |
-| POST | `/analyze-performance` | TimeRange | PerformanceAnalysis | Analyze account performance |
-
-#### Draft Routes (`/api/drafts`)
-
-| Method | Endpoint | Request | Response | Description |
-|--------|----------|---------|----------|-------------|
-| GET | `/` | JWT | List[DraftResponse] | List user drafts |
-| GET | `/{id}` | JWT | DraftResponse | Get draft details |
-| PUT | `/{id}` | DraftUpdate | DraftResponse | Update draft manually |
-| POST | `/{id}/publish` | PublishRequest | PublishedCampaignResponse | Publish draft to Facebook |
-| GET | `/{id}/variants` | JWT | List[DraftResponse] | Get draft variants |
-
-#### Performance Routes (`/api/performance`)
-
-| Method | Endpoint | Request | Response | Description |
-|--------|----------|---------|----------|-------------|
-| GET | `/summary` | TimeRange | PerformanceSummary | Get performance summary |
-| GET | `/top-performers` | Metric, TimeRange | List[TopPerformer] | Get top performing ads |
-| GET | `/underperformers` | Threshold | List[UnderPerformer] | Get underperforming ads |
-| GET | `/campaigns` | Filters | List[CampaignMetrics] | Get campaign metrics |
-
-#### Activity Routes (`/api/activity`)
-
-| Method | Endpoint | Request | Response | Description |
-|--------|----------|---------|----------|-------------|
-| GET | `/` | JWT, Filters | List[ActivityLogResponse] | Get activity log |
-| GET | `/recommendations` | JWT | List[Recommendation] | Get pending recommendations |
-| POST | `/recommendations/{id}/apply` | JWT | ApplyResult | Apply a recommendation |
-
-### 2.3 Frontend Modules (React)
-
-```
-src/
-├── api/
-│   ├── client.ts              # Axios instance with interceptors
-│   ├── auth.ts                # Auth API calls
-│   ├── conversations.ts       # Conversation API calls
-│   ├── drafts.ts              # Draft API calls
-│   ├── performance.ts         # Performance API calls
-│   └── user.ts                # User/preferences API calls
-│
-├── features/
-│   ├── auth/
-│   │   ├── LoginPage.tsx      # Google Sign-In page
-│   │   ├── AuthProvider.tsx   # Auth context provider
-│   │   └── useAuth.ts         # Auth hook
-│   │
-│   ├── onboarding/
-│   │   ├── SetupWizard.tsx    # Multi-step wizard container
-│   │   ├── ConnectFacebook.tsx
-│   │   ├── SelectAdAccount.tsx
-│   │   ├── SelectPage.tsx
-│   │   └── SetDefaults.tsx
-│   │
-│   ├── warroom/
-│   │   ├── WarRoom.tsx        # Main split-screen layout
-│   │   ├── ChatPanel.tsx      # Left panel - chat interface
-│   │   ├── MessageList.tsx    # Chat message list
-│   │   ├── MessageInput.tsx   # Chat input with attachments
-│   │   ├── AgentMessage.tsx   # Agent message bubble
-│   │   ├── UserMessage.tsx    # User message bubble
-│   │   ├── TypingIndicator.tsx
-│   │   ├── LiveStage.tsx      # Right panel container
-│   │   ├── CurrentDraft.tsx   # Draft preview tab
-│   │   ├── AdMockup.tsx       # Facebook ad mockup component
-│   │   ├── VariantSelector.tsx
-│   │   ├── DraftEditor.tsx    # Manual edit mode
-│   │   ├── PastPerformance.tsx # Performance table tab
-│   │   └── ActivityLog.tsx    # Activity timeline tab
-│   │
-│   ├── settings/
-│   │   ├── SettingsPage.tsx
-│   │   ├── AccountSection.tsx
-│   │   ├── FacebookSection.tsx
-│   │   └── PreferencesSection.tsx
-│   │
-│   └── shared/
-│       ├── Button.tsx
-│       ├── Input.tsx
-│       ├── Select.tsx
-│       ├── Modal.tsx
-│       ├── Toast.tsx
-│       ├── Tabs.tsx
-│       ├── Table.tsx
-│       ├── Loader.tsx
-│       └── ProgressBar.tsx
-│
-├── hooks/
-│   ├── useConversation.ts
-│   ├── useDrafts.ts
-│   ├── usePerformance.ts
-│   └── useWebSocket.ts
-│
-├── context/
-│   ├── AuthContext.tsx
-│   ├── ConversationContext.tsx
-│   └── DraftContext.tsx
-│
-├── utils/
-│   ├── formatters.ts
-│   ├── validators.ts
-│   └── constants.ts
-│
-├── App.tsx
-├── main.tsx
-└── index.css                   # Tailwind imports
-```
+#### Modified Agent Endpoints (`/api/agent`)
+| Method | Endpoint | Request Schema | Response Schema | Description |
+|--------|----------|----------------|-----------------|-------------|
+| POST | `/chat` | `ChatRequest` (+ workspace_id, page_id) | `SSE Stream` | Page-scoped chat |
+| GET | `/daily-brief/<workspace_id>` | - | `DailyBriefResponse` | Workspace daily summary |
+| POST | `/generate-copy` | `CopyRequest` (+ page_id) | `CopyResponse` | Page-scoped copy generation |
 
 ---
 
-## 3. Agentic Architecture
-
-### 3.1 Agent Hierarchy
-
-```
-┌────────────────────────────────────────────────────────────┐
-│                    ORCHESTRATOR AGENT                       │
-│            (Persona: Senior Media Buyer)                    │
-│                                                             │
-│  Responsibilities:                                          │
-│  - Understand user intent                                   │
-│  - Break work into tasks                                    │
-│  - Coordinate sub-agents                                    │
-│  - Maintain conversation state                              │
-│  - Make final decisions                                     │
-└─────────────────────┬──────────────────────────────────────┘
-                      │
-         ┌────────────┼────────────┬────────────┬────────────┐
-         │            │            │            │            │
-         ▼            ▼            ▼            ▼            ▼
-┌─────────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
-│ Performance │ │ Creative │ │Copywriter│ │Execution │ │ QA/Safety│
-│   Analyst   │ │Strategist│ │  Agent   │ │  Agent   │ │  Agent   │
-└─────────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘
-```
-
-### 3.2 Agent Tools
+### 2.3 Pydantic Schemas
 
 ```python
-# Tool definitions for LangChain
+# backend/app/schemas/workspace.py
 
-AGENT_TOOLS = [
-    # Performance Analysis
-    "get_ad_account_stats",      # Get metrics for time range
-    "get_top_performers",        # Find winning ads
-    "get_underperformers",       # Find losing ads
-    "summarize_performance",     # Plain-language summary
+class WorkspaceCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    default_daily_budget: Optional[float] = 500.0
+    default_currency: Optional[str] = 'INR'
+    timezone: Optional[str] = 'Asia/Kolkata'
 
-    # Creative Generation
-    "generate_creative_briefs",  # Create ad angles/concepts
-    "generate_ad_copy",          # Write copy variants
-    "suggest_audiences",         # Recommend targeting
-    "search_stock_images",       # Find images (Unsplash/Pexels)
+class WorkspaceUpdate(BaseModel):
+    name: Optional[str] = None
+    default_daily_budget: Optional[float] = None
+    default_currency: Optional[str] = None
+    default_objective: Optional[str] = None
+    timezone: Optional[str] = None
 
-    # Preview & State
-    "update_preview_state",      # Update UI preview
-    "save_draft",                # Persist draft to DB
-    "get_current_draft",         # Retrieve current draft
+class WorkspaceResponse(BaseModel):
+    id: str
+    name: str
+    facebook_connected: bool
+    setup_completed: bool
+    ad_account_id: Optional[str]
+    default_daily_budget: float
+    default_currency: str
+    default_objective: str
+    timezone: str
+    created_at: datetime
 
-    # Execution
-    "publish_campaign",          # Create FB campaign
-    "adjust_budget",             # Change campaign budget
-    "pause_items",               # Pause campaigns/ads
+    class Config:
+        from_attributes = True
 
-    # Logging
-    "log_decision",              # Record agent reasoning
-
-    # Simulation
-    "simulate_results",          # Rough predictions
-]
+class WorkspaceDetailResponse(WorkspaceResponse):
+    pages: List['WorkspacePageResponse']
+    products: List['ProductResponse']
+    ad_account: Optional['AdAccountResponse']
 ```
-
-### 3.3 State Machine
-
-```
-States:
-  IDLE          → Initial state, waiting for user
-  DISCOVERY     → Gathering info about what user wants
-  IDEATION      → Generating creative concepts
-  DRAFTING      → Writing ad copy/selecting media
-  REVIEW        → User reviewing draft
-  READY_TO_PUBLISH → Draft approved, awaiting publish command
-  PUBLISHED     → Campaign live
-
-Transitions:
-  IDLE → DISCOVERY: User initiates conversation / Daily trigger
-  DISCOVERY → IDEATION: User provides product/goal
-  IDEATION → DRAFTING: Brief selected
-  DRAFTING → REVIEW: Draft complete
-  REVIEW → DRAFTING: User requests changes
-  REVIEW → READY_TO_PUBLISH: User approves
-  READY_TO_PUBLISH → PUBLISHED: publish_campaign() succeeds
-  PUBLISHED → IDLE: Conversation complete
-  * → IDLE: User explicitly ends / New conversation
-```
-
-### 3.4 Memory Architecture
 
 ```python
-class AgentMemory:
-    # Short-term (per conversation)
-    conversation_history: List[Message]
-    current_draft: Optional[AdDraft]
-    current_state: ConversationState
-    pending_tool_calls: List[ToolCall]
+# backend/app/schemas/product.py
 
-    # Long-term (per user, persisted in DB)
-    past_winners: List[PastWinner]        # Top performing ads
-    user_preferences: UserPreferences     # Tone, budget, etc.
-    account_config: AdAccount             # Selected account
-    learned_patterns: Dict                # What works for this user
+class ProductCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    short_description: Optional[str] = None
+    long_description: Optional[str] = None
+    price: Optional[float] = None
+    price_range_min: Optional[float] = None
+    price_range_max: Optional[float] = None
+    currency: Optional[str] = 'INR'
+    usp: Optional[str] = None
+    target_audience: Optional[str] = None
+    seasonality: Optional[str] = None
+    primary_image_url: Optional[str] = None
+    image_url_2: Optional[str] = None
+    image_url_3: Optional[str] = None
+    tags: Optional[List[str]] = []
+
+class ProductUpdate(BaseModel):
+    name: Optional[str] = None
+    short_description: Optional[str] = None
+    long_description: Optional[str] = None
+    price: Optional[float] = None
+    price_range_min: Optional[float] = None
+    price_range_max: Optional[float] = None
+    currency: Optional[str] = None
+    usp: Optional[str] = None
+    target_audience: Optional[str] = None
+    seasonality: Optional[str] = None
+    primary_image_url: Optional[str] = None
+    image_url_2: Optional[str] = None
+    image_url_3: Optional[str] = None
+    tags: Optional[List[str]] = None
+    is_active: Optional[bool] = None
+
+class ProductResponse(BaseModel):
+    id: str
+    workspace_id: str
+    name: str
+    short_description: Optional[str]
+    long_description: Optional[str]
+    price: Optional[float]
+    price_range_min: Optional[float]
+    price_range_max: Optional[float]
+    currency: str
+    usp: Optional[str]
+    target_audience: Optional[str]
+    seasonality: Optional[str]
+    primary_image_url: Optional[str]
+    image_url_2: Optional[str]
+    image_url_3: Optional[str]
+    tags: List[str]
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class PageTagRequest(BaseModel):
+    page_ids: List[str]
+    set_default_for: Optional[str] = None  # page_id to set as default
 ```
-
----
-
-## 4. Implementation Details
-
-### 4.1 Backend Structure
-
-```
-backend/
-├── app/
-│   ├── __init__.py            # Flask app factory
-│   ├── config.py              # Configuration classes
-│   ├── extensions.py          # SQLAlchemy, etc.
-│   │
-│   ├── models/
-│   │   ├── __init__.py
-│   │   ├── user.py
-│   │   ├── facebook.py
-│   │   ├── conversation.py
-│   │   ├── draft.py
-│   │   ├── performance.py
-│   │   └── activity.py
-│   │
-│   ├── api/
-│   │   ├── __init__.py        # Blueprint registration
-│   │   ├── auth.py
-│   │   ├── users.py
-│   │   ├── onboarding.py
-│   │   ├── conversations.py
-│   │   ├── agent.py
-│   │   ├── drafts.py
-│   │   ├── performance.py
-│   │   └── activity.py
-│   │
-│   ├── services/
-│   │   ├── __init__.py
-│   │   ├── auth_service.py
-│   │   ├── facebook_service.py
-│   │   ├── agent_service.py
-│   │   └── performance_service.py
-│   │
-│   ├── agents/
-│   │   ├── __init__.py
-│   │   ├── orchestrator.py     # Main agent
-│   │   ├── performance_analyst.py
-│   │   ├── creative_strategist.py
-│   │   ├── copywriter.py
-│   │   ├── execution_agent.py
-│   │   ├── qa_safety_agent.py
-│   │   ├── tools/
-│   │   │   ├── __init__.py
-│   │   │   ├── performance_tools.py
-│   │   │   ├── creative_tools.py
-│   │   │   ├── execution_tools.py
-│   │   │   └── utility_tools.py
-│   │   └── prompts/
-│   │       ├── orchestrator.txt
-│   │       ├── analyst.txt
-│   │       ├── strategist.txt
-│   │       ├── copywriter.txt
-│   │       └── qa.txt
-│   │
-│   ├── schemas/
-│   │   ├── __init__.py
-│   │   ├── auth.py
-│   │   ├── user.py
-│   │   ├── conversation.py
-│   │   ├── draft.py
-│   │   └── performance.py
-│   │
-│   └── utils/
-│       ├── __init__.py
-│       ├── security.py
-│       ├── decorators.py
-│       └── helpers.py
-│
-├── migrations/                 # Flask-Migrate
-├── tests/
-├── requirements.txt
-├── run.py
-└── .env.example
-```
-
-### 4.2 Key Libraries
-
-**Backend:**
-- Flask 3.x
-- Flask-SQLAlchemy
-- Flask-Migrate
-- Flask-CORS
-- Flask-JWT-Extended
-- Authlib (OAuth)
-- LangChain
-- OpenAI / Anthropic SDK
-- facebook-business SDK
-- Pydantic (validation)
-- python-dotenv
-
-**Frontend:**
-- React 18
-- React Router v6
-- Tailwind CSS
-- Axios
-- React Query (TanStack Query)
-- Socket.io-client (real-time)
-- React Hook Form
-- Zustand (state management)
-
-### 4.3 Security Considerations
-
-1. **Token Storage**: Facebook access tokens encrypted at rest (Fernet)
-2. **JWT**: Short-lived access tokens (15 min) + refresh tokens
-3. **CORS**: Strict origin checking
-4. **Rate Limiting**: Per-user rate limits on agent endpoints
-5. **Input Validation**: Pydantic schemas for all inputs
-6. **Budget Guardrails**: Max budget limits in agent logic
-7. **Content Filtering**: QA agent checks for policy violations
-
-### 4.4 Facebook API Integration
 
 ```python
-# Required permissions
-FACEBOOK_PERMISSIONS = [
-    'ads_read',           # Read ad data
-    'ads_management',     # Create/manage ads
-    'pages_read_engagement',  # Read page data
-    'business_management',    # Access Business Manager
-]
+# backend/app/schemas/workspace_page.py
 
-# Key API endpoints used
-FACEBOOK_API_ENDPOINTS = {
-    'ad_accounts': '/me/adaccounts',
-    'pages': '/me/accounts',
-    'campaigns': '/{ad_account_id}/campaigns',
-    'adsets': '/{ad_account_id}/adsets',
-    'ads': '/{ad_account_id}/ads',
-    'insights': '/{object_id}/insights',
-}
+class PageSettingsUpdate(BaseModel):
+    default_tone: Optional[str] = None
+    default_cta_style: Optional[str] = None
+    target_markets: Optional[List[str]] = None
+    is_included: Optional[bool] = None
+
+class WorkspacePageResponse(BaseModel):
+    id: str
+    workspace_id: str
+    facebook_page_id: str
+    facebook_page: 'FacebookPageResponse'
+    default_tone: str
+    default_cta_style: Optional[str]
+    target_markets: List[str]
+    is_included: bool
+    is_primary: bool
+    has_conversation: bool
+    conversation_id: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+class PageSetupRequest(BaseModel):
+    pages: List['PageSetupItem']
+
+class PageSetupItem(BaseModel):
+    facebook_page_id: str
+    is_included: bool = True
+    default_tone: Optional[str] = 'friendly'
 ```
 
 ---
 
-## 5. Environment Variables
+### 2.4 Frontend Modules
 
-```bash
-# Flask
-FLASK_APP=run.py
-FLASK_ENV=development
-SECRET_KEY=your-secret-key
+#### New Components
 
-# Database
-DATABASE_URL=sqlite:///dailyadagent.db
+**Feature: Workspace Management**
+```
+src/features/workspace/
+├── WorkspaceContext.jsx       # Context for active workspace
+├── WorkspaceSwitcher.jsx      # Dropdown (UI hidden for V1, logic ready)
+├── WorkspaceSettings.jsx      # Workspace configuration modal
+└── hooks/
+    ├── useWorkspace.js        # Active workspace hook
+    └── useWorkspaces.js       # All workspaces query
+```
 
-# Google OAuth
-GOOGLE_CLIENT_ID=your-google-client-id
-GOOGLE_CLIENT_SECRET=your-google-client-secret
+**Feature: Page-Based Navigation (NEW)**
+```
+src/features/navigation/
+├── Sidebar.jsx                # Left sidebar with Account + Pages
+├── AccountOverviewItem.jsx    # "Account Overview" nav item
+├── PageListItem.jsx           # Individual page nav item
+├── PageSettingsDrawer.jsx     # Page tone/CTA settings drawer
+└── hooks/
+    └── useNavigation.js       # Navigation state
+```
 
-# Facebook OAuth
-FACEBOOK_APP_ID=your-facebook-app-id
-FACEBOOK_APP_SECRET=your-facebook-app-secret
+**Feature: Products (NEW)**
+```
+src/features/products/
+├── ProductList.jsx            # Product grid/list view
+├── ProductCard.jsx            # Product display card
+├── ProductForm.jsx            # Create/edit product form
+├── ProductSelector.jsx        # Dropdown in chat header
+├── ProductTagManager.jsx      # Tag products to pages
+└── hooks/
+    ├── useProducts.js         # Products query
+    └── useProductMutations.js # CRUD mutations
+```
 
-# AI/LLM
-OPENAI_API_KEY=your-openai-key
-# or
-ANTHROPIC_API_KEY=your-anthropic-key
+**Feature: War Room (MODIFIED)**
+```
+src/features/warroom/
+├── WarRoom.jsx                # MODIFIED: Add sidebar, page context
+├── WarRoomHeader.jsx          # NEW: Active page, product selector
+├── ChatPanel.jsx              # MODIFIED: Page-scoped context
+├── AccountOverviewChat.jsx    # NEW: Cross-page summary view
+├── PageWarRoomChat.jsx        # NEW: Page-specific chat
+├── LegacyArchiveViewer.jsx    # NEW: View archived conversations
+├── PinnedSummary.jsx          # NEW: Pinned legacy summary
+└── ...existing components
+```
 
-# JWT
-JWT_SECRET_KEY=your-jwt-secret
+**Feature: Onboarding (MODIFIED)**
+```
+src/features/onboarding/
+├── SetupWizard.jsx            # MODIFIED: New steps
+├── steps/
+│   ├── WorkspaceNameStep.jsx  # Step 1: Name workspace
+│   ├── FacebookConnectStep.jsx # Step 2: Optional FB connect
+│   ├── AdAccountSelectStep.jsx # Step 3: Select ad account
+│   ├── PageSelectionStep.jsx  # Step 4: Choose pages (NEW)
+│   ├── PageSetupStep.jsx      # Step 4b: Set page tones (NEW)
+│   ├── ProductSetupStep.jsx   # Step 5: Add products (NEW)
+│   └── CompletionStep.jsx     # Redirect to War Room
+└── hooks/
+    └── useOnboarding.js
+```
 
-# Frontend URL (for CORS)
-FRONTEND_URL=http://localhost:3000
+#### Modified Components
 
-# Stock Images (optional)
-UNSPLASH_ACCESS_KEY=your-unsplash-key
-PEXELS_API_KEY=your-pexels-key
+**API Layer**
+```
+src/api/
+├── workspaces.js              # NEW: Workspace CRUD
+├── products.js                # NEW: Product CRUD
+├── pages.js                   # NEW: Page settings
+├── conversations.js           # MODIFIED: Page-scoped queries
+└── agent.js                   # MODIFIED: Page context in chat
+```
+
+**Context**
+```
+src/context/
+├── WorkspaceContext.jsx       # NEW: Active workspace state
+├── PageContext.jsx            # NEW: Active page state
+├── ConversationContext.jsx    # MODIFIED: Chat type awareness
+└── AuthContext.jsx            # MODIFIED: Include active workspace
 ```
 
 ---
 
-## 6. Deployment Notes
+### 2.5 Agent Memory Architecture
 
-### PythonAnywhere Specific:
-- Use WSGI configuration for Flask
-- SQLite file stored in persistent storage
-- Scheduled tasks for daily triggers
-- Static files served separately
+#### Page-Scoped Memory Retrieval
 
-### Frontend Hosting:
-- Can be hosted on PythonAnywhere static files
-- Or separate hosting (Vercel, Netlify)
+```python
+# backend/app/services/memory_service.py
+
+class MemoryRetrievalService:
+    """Handles page-scoped memory for agent context"""
+
+    def get_context_for_chat(
+        self,
+        chat_type: ConversationType,
+        workspace_id: str,
+        page_id: Optional[str] = None,
+        product_id: Optional[str] = None
+    ) -> dict:
+        """
+        Retrieval priority:
+        1. Page War Room: page history → page products → page settings
+        2. Account Overview: workspace-wide metrics → all pages summary
+        """
+
+        if chat_type == ConversationType.PAGE_WAR_ROOM:
+            return {
+                'page_history': self._get_page_conversation_history(page_id),
+                'page_settings': self._get_page_settings(page_id),
+                'active_product': self._get_product(product_id) if product_id else None,
+                'page_products': self._get_page_products(page_id),
+                'page_performance': self._get_page_performance(page_id),
+                'past_winners': self._get_page_winners(page_id),
+            }
+
+        elif chat_type == ConversationType.ACCOUNT_OVERVIEW:
+            return {
+                'workspace_summary': self._get_workspace_summary(workspace_id),
+                'all_pages_performance': self._get_all_pages_performance(workspace_id),
+                'cross_page_recommendations': self._get_recommendations(workspace_id),
+                'pinned_legacy_summary': self._get_pinned_summary(workspace_id),
+            }
+
+    def _get_page_conversation_history(self, page_id: str, limit: int = 50) -> List[dict]:
+        """Get recent messages from page's war room"""
+        pass
+
+    def _get_page_settings(self, page_id: str) -> dict:
+        """Get page tone, CTA style, target markets"""
+        pass
+
+    def _get_page_products(self, page_id: str) -> List[dict]:
+        """Get products tagged to this page"""
+        pass
+
+    def _get_page_performance(self, page_id: str, days: int = 7) -> dict:
+        """Get recent performance metrics for page's campaigns"""
+        pass
+
+    def _get_workspace_summary(self, workspace_id: str) -> dict:
+        """Get overall workspace stats"""
+        pass
+
+    def _get_all_pages_performance(self, workspace_id: str) -> List[dict]:
+        """Get performance summary for all pages"""
+        pass
+```
+
+---
+
+### 2.6 Migration Strategy
+
+#### Legacy Conversation Handling
+
+```python
+# backend/app/services/migration_service.py
+
+def migrate_legacy_conversations(user_id: str, workspace_id: str):
+    """
+    Migration steps:
+    1. Find all conversations without workspace_id for this user
+    2. Mark as chat_type = LEGACY
+    3. Set is_archived = True
+    4. Generate AI summary for each (batch)
+    5. Create pinned summary in Account Overview
+    """
+
+    legacy_convos = Conversation.query.filter(
+        Conversation.user_id == user_id,
+        Conversation.workspace_id.is_(None),
+        Conversation.chat_type != ConversationType.LEGACY
+    ).all()
+
+    if not legacy_convos:
+        return
+
+    summaries = []
+    for convo in legacy_convos:
+        # Archive the conversation
+        convo.chat_type = ConversationType.LEGACY
+        convo.is_archived = True
+        convo.archived_at = datetime.utcnow()
+
+        # Generate summary using agent
+        convo.archive_summary = generate_conversation_summary(convo)
+        summaries.append({
+            'title': convo.title,
+            'summary': convo.archive_summary,
+            'message_count': len(convo.messages),
+            'created_at': convo.created_at.isoformat()
+        })
+
+    db.session.commit()
+
+    # Create pinned summary in Account Overview
+    overview_chat = get_or_create_overview_chat(workspace_id)
+    overview_chat.is_pinned = True
+    overview_chat.pinned_content = json.dumps({
+        'type': 'legacy_archive',
+        'message': f'Archived {len(legacy_convos)} previous conversations',
+        'conversations': summaries
+    })
+    db.session.commit()
+```
+
+---
+
+## 3. Implementation Details
+
+### 3.1 Auto-Chat Creation Logic
+
+When a workspace completes setup:
+```python
+def create_workspace_chats(workspace: Workspace):
+    """Auto-create required chats for workspace"""
+
+    # 1. Create Account Overview chat
+    overview_chat = Conversation(
+        user_id=workspace.user_id,
+        workspace_id=workspace.id,
+        chat_type=ConversationType.ACCOUNT_OVERVIEW,
+        title=f"{workspace.name} - Account Overview"
+    )
+    db.session.add(overview_chat)
+
+    # 2. Create Page War Room for each included page
+    for wp in workspace.pages:
+        if wp.is_included:
+            page_chat = Conversation(
+                user_id=workspace.user_id,
+                workspace_id=workspace.id,
+                workspace_page_id=wp.id,
+                chat_type=ConversationType.PAGE_WAR_ROOM,
+                title=f"{wp.facebook_page.name} War Room"
+            )
+            db.session.add(page_chat)
+
+    db.session.commit()
+
+    # 3. If legacy conversations exist, migrate them
+    migrate_legacy_conversations(workspace.user_id, workspace.id)
+```
+
+### 3.2 Daily Brief Enhancement
+
+```python
+def generate_workspace_daily_brief(workspace_id: str) -> str:
+    """
+    Enhanced daily brief for Account Overview:
+    - Yesterday's total spend across all pages
+    - Per-page performance summary
+    - Top performer identification
+    - Cross-page recommendations
+    - Suggested actions with page links
+    """
+    workspace = Workspace.query.get(workspace_id)
+    pages = WorkspacePage.query.filter_by(
+        workspace_id=workspace_id,
+        is_included=True
+    ).all()
+
+    # Gather metrics per page
+    page_metrics = []
+    for page in pages:
+        metrics = get_page_performance(page.id, days=1)
+        page_metrics.append({
+            'page_name': page.facebook_page.name,
+            'page_id': page.id,
+            **metrics
+        })
+
+    # Generate summary using agent
+    brief = agent_service.generate_brief(
+        workspace_name=workspace.name,
+        page_metrics=page_metrics,
+        workspace_defaults=workspace.to_dict()
+    )
+
+    return brief
+```
+
+### 3.3 Frontend Routing
+
+```javascript
+// App.jsx routes update
+<Route path="/app" element={<WarRoom />}>
+  <Route index element={<Navigate to="overview" replace />} />
+  <Route path="overview" element={<AccountOverviewChat />} />
+  <Route path="page/:pageId" element={<PageWarRoomChat />} />
+  <Route path="archive" element={<LegacyArchiveViewer />} />
+</Route>
+<Route path="/setup" element={<SetupWizard />} />
+<Route path="/settings" element={<SettingsPage />} />
+```
+
+### 3.4 Sidebar Navigation Structure
+
+```jsx
+// Sidebar.jsx structure
+<aside className="w-64 bg-gray-900 text-white">
+  {/* Account Section */}
+  <div className="p-4 border-b border-gray-700">
+    <h3 className="text-xs uppercase text-gray-400">Account</h3>
+    <NavLink to="/app/overview">
+      <AccountOverviewItem />
+    </NavLink>
+  </div>
+
+  {/* Pages Section */}
+  <div className="p-4">
+    <h3 className="text-xs uppercase text-gray-400">Pages</h3>
+    <nav className="space-y-1 mt-2">
+      {pages.map(page => (
+        <NavLink key={page.id} to={`/app/page/${page.id}`}>
+          <PageListItem page={page} />
+        </NavLink>
+      ))}
+    </nav>
+  </div>
+
+  {/* Archive Link (if legacy exists) */}
+  {hasLegacyConversations && (
+    <div className="p-4 border-t border-gray-700">
+      <NavLink to="/app/archive">
+        📁 Archived Conversations
+      </NavLink>
+    </div>
+  )}
+</aside>
+```
+
+---
+
+## 4. Key Technical Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Workspace-User relation | Many-to-One (schema), One-to-One (UI V1) | Future-proof for multi-workspace |
+| Product images | 3 optional URL fields | Simple, no file upload complexity |
+| Chat auto-creation | On workspace setup completion | Ensures consistent structure |
+| Legacy migration | Archive + summarize + pin | Preserves history without clutter |
+| Page settings storage | Separate WorkspacePage model | Flexibility for page-specific config |
+| Memory scoping | Service layer abstraction | Clean separation, testable |
+| No Campaign Threads | Deferred to V2 | Reduces MVP scope |
+
+---
+
+## 5. External Dependencies
+
+No new packages required. Existing stack sufficient:
+- **Backend**: Flask, SQLAlchemy, Flask-Migrate, Pydantic
+- **Frontend**: React, React Router, TailwindCSS, React Query
+
+---
+
+## 6. Risks & Mitigations
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Legacy data loss | High | Archive instead of delete, generate summaries |
+| Performance with many pages | Medium | Pagination, lazy loading in sidebar |
+| Complex onboarding | Medium | Skip options, sensible defaults, clear progress |
+| Agent context confusion | High | Clear chat type boundaries in system prompts |
+| Migration failures | Medium | Batch processing, error recovery, manual fallback |

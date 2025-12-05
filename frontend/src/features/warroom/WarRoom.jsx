@@ -1,83 +1,27 @@
-import { useEffect } from 'react';
-import { useConversation } from '../../context/ConversationContext';
-import { DraftProvider } from '../../context/DraftContext';
-import { ChatPanel } from './ChatPanel';
-import { LiveStage } from './LiveStage';
+import { useState } from 'react';
+import { Outlet } from 'react-router-dom';
+import { Sidebar } from '../navigation/Sidebar';
+import { WarRoomHeader } from './WarRoomHeader';
 
 export function WarRoom() {
-  const { loadConversations, createConversation, currentConversation } = useConversation();
-
-  useEffect(() => {
-    loadConversations();
-    // Start a new conversation if none exists
-    if (!currentConversation) {
-      createConversation();
-    }
-  }, []);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <DraftProvider>
-      <div className="h-screen flex flex-col bg-gray-100">
-        {/* Header */}
-        <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-9 h-9 bg-primary-600 rounded-xl flex items-center justify-center">
-              <svg
-                className="w-5 h-5 text-white"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 10V3L4 14h7v7l9-11h-7z"
-                />
-              </svg>
-            </div>
-            <div>
-              <h1 className="font-semibold text-gray-900">Daily Ad Agent</h1>
-              <p className="text-xs text-gray-500">
-                {currentConversation?.state === 'idle' ? 'Ready' : `Status: ${currentConversation?.state}`}
-              </p>
-            </div>
-          </div>
+    <div className="h-screen flex flex-col bg-gray-100">
+      {/* Header */}
+      <WarRoomHeader onMenuClick={() => setSidebarOpen(true)} />
 
-          <div className="flex items-center space-x-4">
-            <button className="text-gray-500 hover:text-gray-700">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                />
-              </svg>
-            </button>
-          </div>
-        </header>
+      {/* Main Layout: Sidebar + Content */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Sidebar */}
+        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-        {/* Main Content */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* Chat Panel - Left */}
-          <div className="w-1/2 border-r border-gray-200 flex flex-col bg-white">
-            <ChatPanel />
-          </div>
-
-          {/* Live Stage - Right */}
-          <div className="w-1/2 flex flex-col bg-gray-50">
-            <LiveStage />
-          </div>
-        </div>
+        {/* Main Content Area */}
+        <main className="flex-1 flex flex-col overflow-hidden">
+          <Outlet />
+        </main>
       </div>
-    </DraftProvider>
+    </div>
   );
 }
 

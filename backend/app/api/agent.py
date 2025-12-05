@@ -6,9 +6,10 @@ import uuid
 import json
 
 from ..extensions import db
-from ..models.conversation import Conversation, Message
+from ..models.conversation import Conversation, Message, ConversationType
 from ..models.user import UserPreferences
 from ..models.facebook import AdAccount
+from ..models.workspace import Workspace, WorkspacePage
 from ..services.agent_service import AgentService
 from ..schemas.agent import ChatRequest, DailyBriefResponse
 
@@ -25,6 +26,11 @@ def chat():
     conversation_id = data.get('conversation_id')
     message_content = data.get('message', '')
 
+    # NEW: Page-based chat context
+    workspace_id = data.get('workspace_id')
+    page_id = data.get('page_id')  # workspace_page_id
+    product_id = data.get('product_id')
+
     # Get or create conversation
     if conversation_id:
         conversation = Conversation.query.filter_by(
@@ -34,9 +40,13 @@ def chat():
         if not conversation:
             return jsonify({'error': 'Conversation not found'}), 404
     else:
+        # Create new conversation with workspace/page context
         conversation = Conversation(
             id=str(uuid.uuid4()),
             user_id=user_id,
+            workspace_id=workspace_id,
+            workspace_page_id=page_id,
+            chat_type=ConversationType.PAGE_WAR_ROOM if page_id else ConversationType.ACCOUNT_OVERVIEW if workspace_id else ConversationType.LEGACY,
             state='idle',
             context={},
             created_at=datetime.utcnow(),
@@ -63,13 +73,16 @@ def chat():
     primary_account = AdAccount.query.filter_by(user_id=user_id, is_primary=True).first()
     facebook_connection = FacebookConnection.query.filter_by(user_id=user_id).first()
 
-    # Initialize agent service with full context
+    # Initialize agent service with full context (including page context)
     agent_service = AgentService(
         user_id=user_id,
         conversation=conversation,
         preferences=preferences,
         ad_account=primary_account,
-        facebook_connection=facebook_connection
+        facebook_connection=facebook_connection,
+        workspace_id=workspace_id or (conversation.workspace_id if conversation else None),
+        page_id=page_id or (conversation.workspace_page_id if conversation else None),
+        product_id=product_id
     )
 
     def generate():
@@ -109,10 +122,27 @@ def chat():
 
 
 @bp.route('/daily-brief', methods=['GET'])
+@bp.route('/daily-brief/<workspace_id>', methods=['GET'])
 @jwt_required()
-def get_daily_brief():
-    """Get the proactive daily brief from the agent."""
+def get_daily_brief(workspace_id=None):
+    """Get the proactive daily brief from the agent.
+
+    Args:
+        workspace_id: Optional workspace ID for workspace-scoped brief
+    """
     user_id = get_jwt_identity()
+
+    # If no workspace_id provided, try to get user's active workspace
+    if not workspace_id:
+        from ..models.user import User
+        user = User.query.get(user_id)
+        if user and hasattr(user, 'active_workspace_id') and user.active_workspace_id:
+            workspace_id = user.active_workspace_id
+        else:
+            # Fall back to first workspace
+            workspace = Workspace.query.filter_by(user_id=user_id, is_active=True).first()
+            if workspace:
+                workspace_id = workspace.id
 
     # Get user context
     from ..models.facebook import FacebookConnection
@@ -128,17 +158,21 @@ def get_daily_brief():
             'recommendations': []
         })
 
-    # Initialize agent service with full context
+    # Initialize agent service with full context (including workspace)
     agent_service = AgentService(
         user_id=user_id,
         conversation=None,
         preferences=preferences,
         ad_account=primary_account,
-        facebook_connection=facebook_connection
+        facebook_connection=facebook_connection,
+        workspace_id=workspace_id
     )
 
     try:
-        brief = agent_service.generate_daily_brief()
+        if workspace_id:
+            brief = agent_service.generate_workspace_daily_brief(workspace_id, user_id)
+        else:
+            brief = agent_service.generate_daily_brief()
         return jsonify(brief)
     except Exception as e:
         return jsonify({

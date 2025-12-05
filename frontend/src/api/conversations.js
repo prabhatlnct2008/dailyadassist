@@ -34,6 +34,32 @@ export const conversationsApi = {
     });
     return response.data;
   },
+
+  // Get account overview conversation
+  getAccountOverview: async (workspaceId) => {
+    const response = await client.get(`/workspaces/${workspaceId}/conversations/overview`);
+    return response.data;
+  },
+
+  // Get page conversation
+  getPageConversation: async (pageId) => {
+    const response = await client.get(`/pages/${pageId}/conversation`);
+    return response.data;
+  },
+
+  // Get legacy (archived) conversations
+  getLegacyConversations: async () => {
+    const response = await client.get('/conversations/legacy');
+    return response.data;
+  },
+
+  // Update conversation's active product
+  updateActiveProduct: async (conversationId, productId) => {
+    const response = await client.put(`/conversations/${conversationId}/active-product`, {
+      product_id: productId,
+    });
+    return response.data;
+  },
 };
 
 export default conversationsApi;

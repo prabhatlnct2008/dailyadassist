@@ -1,6 +1,14 @@
 """Conversation and message models."""
 from datetime import datetime
+from enum import Enum
 from ..extensions import db
+
+
+class ConversationType(str, Enum):
+    """Types of conversations in the system."""
+    ACCOUNT_OVERVIEW = 'account_overview'
+    PAGE_WAR_ROOM = 'page_war_room'
+    LEGACY = 'legacy'
 
 
 class Conversation(db.Model):
@@ -10,9 +18,28 @@ class Conversation(db.Model):
     id = db.Column(db.String(36), primary_key=True)
     user_id = db.Column(db.String(36), db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
 
+    # Workspace and Page linkage
+    workspace_id = db.Column(db.String(36), db.ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=True)
+    workspace_page_id = db.Column(db.String(36), db.ForeignKey('workspace_pages.id', ondelete='CASCADE'), nullable=True)
+
+    # Active product (for page chats)
+    active_product_id = db.Column(db.String(36), db.ForeignKey('products.id', ondelete='SET NULL'), nullable=True)
+
+    # Chat type
+    chat_type = db.Column(db.Enum(ConversationType), default=ConversationType.LEGACY)
+
     title = db.Column(db.String(255), nullable=True)
     state = db.Column(db.String(50), default='idle')  # idle, discovery, ideation, drafting, review, ready_to_publish, published
     context = db.Column(db.JSON, default=dict)  # Stores current campaign context
+
+    # For legacy migration
+    is_archived = db.Column(db.Boolean, default=False)
+    archived_at = db.Column(db.DateTime, nullable=True)
+    archive_summary = db.Column(db.Text, nullable=True)
+
+    # Pinned status (for Account Overview pinned summaries)
+    is_pinned = db.Column(db.Boolean, default=False)
+    pinned_content = db.Column(db.Text, nullable=True)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -31,7 +58,7 @@ class Conversation(db.Model):
         self.state = new_state
 
     def __repr__(self):
-        return f'<Conversation {self.id[:8]}... state={self.state}>'
+        return f'<Conversation {self.id[:8]}... type={self.chat_type} state={self.state}>'
 
 
 class Message(db.Model):
