@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ConversationProvider } from './context/ConversationContext';
+import { WorkspaceProvider } from './context/WorkspaceContext';
+import { PageProvider } from './context/PageContext';
 import { ToastProvider } from './features/shared/Toast';
 import { FullPageLoader } from './features/shared/Loader';
 
@@ -12,6 +14,12 @@ import { AuthCallback } from './features/auth/AuthCallback';
 import { SetupWizard } from './features/onboarding/SetupWizard';
 import { WarRoom } from './features/warroom/WarRoom';
 import { SettingsPage } from './features/settings/SettingsPage';
+
+// Placeholder components for nested routes
+// TODO: Implement these components in future phases
+const AccountOverviewChat = () => <div className="p-6">Account Overview Chat - Coming Soon</div>;
+const PageWarRoomChat = () => <div className="p-6">Page War Room Chat - Coming Soon</div>;
+const LegacyArchiveViewer = () => <div className="p-6">Legacy Archive - Coming Soon</div>;
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -81,12 +89,21 @@ function AppRoutes() {
         path="/app"
         element={
           <ProtectedRoute>
-            <ConversationProvider>
-              <WarRoom />
-            </ConversationProvider>
+            <WorkspaceProvider>
+              <PageProvider>
+                <ConversationProvider>
+                  <WarRoom />
+                </ConversationProvider>
+              </PageProvider>
+            </WorkspaceProvider>
           </ProtectedRoute>
         }
-      />
+      >
+        <Route index element={<Navigate to="overview" replace />} />
+        <Route path="overview" element={<AccountOverviewChat />} />
+        <Route path="page/:pageId" element={<PageWarRoomChat />} />
+        <Route path="archive" element={<LegacyArchiveViewer />} />
+      </Route>
 
       {/* Catch all */}
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -34,6 +34,36 @@ export const conversationsApi = {
     });
     return response.data;
   },
+
+  // Get workspace conversations
+  getWorkspaceConversations: async (workspaceId) => {
+    const response = await client.get(`/workspaces/${workspaceId}/conversations`);
+    return response.data;
+  },
+
+  // Get account overview conversation
+  getAccountOverview: async (workspaceId) => {
+    const response = await client.get(`/workspaces/${workspaceId}/conversations/overview`);
+    return response.data;
+  },
+
+  // Get page conversation
+  getPageConversation: async (pageId) => {
+    const response = await client.get(`/pages/${pageId}/conversation`);
+    return response.data;
+  },
+
+  // Get legacy conversations (pre-workspace)
+  getLegacyConversations: async () => {
+    const response = await client.get('/conversations/legacy');
+    return response.data;
+  },
+
+  // Archive a conversation
+  archiveConversation: async (conversationId) => {
+    const response = await client.post(`/conversations/${conversationId}/archive`);
+    return response.data;
+  },
 };
 
 export default conversationsApi;

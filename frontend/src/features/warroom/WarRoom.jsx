@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Outlet } from 'react-router-dom';
 import { useConversation } from '../../context/ConversationContext';
 import { DraftProvider } from '../../context/DraftContext';
 import { ChatPanel } from './ChatPanel';
@@ -66,15 +67,19 @@ export function WarRoom() {
 
         {/* Main Content */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Chat Panel - Left */}
+          {/* Check if we have nested routes, if so render Outlet, otherwise render default layout */}
+          <Outlet />
+
+          {/* Default layout - will be replaced by nested routes */}
+          {/* Keeping this for backwards compatibility if no nested route matches */}
+          {/*
           <div className="w-1/2 border-r border-gray-200 flex flex-col bg-white">
             <ChatPanel />
           </div>
-
-          {/* Live Stage - Right */}
           <div className="w-1/2 flex flex-col bg-gray-50">
             <LiveStage />
           </div>
+          */}
         </div>
       </div>
     </DraftProvider>
