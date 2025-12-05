@@ -1,41 +1,46 @@
 import client from './client';
 
 export const productsApi = {
-  // List all products in a workspace
-  listProducts: async (workspaceId) => {
+  // List products for workspace
+  list: async (workspaceId) => {
     const response = await client.get(`/workspaces/${workspaceId}/products`);
     return response.data;
   },
 
-  // Create a new product
-  createProduct: async (workspaceId, data) => {
-    const response = await client.post(`/workspaces/${workspaceId}/products`, data);
+  // Get products tagged to a specific page
+  listForPage: async (workspaceId, pageId) => {
+    const response = await client.get(`/workspaces/${workspaceId}/products`, {
+      params: { page_id: pageId },
+    });
     return response.data;
   },
 
-  // Get a specific product
-  getProduct: async (workspaceId, productId) => {
+  // Get product by ID
+  get: async (workspaceId, productId) => {
     const response = await client.get(`/workspaces/${workspaceId}/products/${productId}`);
     return response.data;
   },
 
-  // Update a product
-  updateProduct: async (workspaceId, productId, data) => {
-    const response = await client.put(
-      `/workspaces/${workspaceId}/products/${productId}`,
-      data
-    );
+  // Create product
+  create: async (workspaceId, data) => {
+    const response = await client.post(`/workspaces/${workspaceId}/products`, data);
     return response.data;
   },
 
-  // Delete a product
-  deleteProduct: async (workspaceId, productId) => {
+  // Update product
+  update: async (workspaceId, productId, data) => {
+    const response = await client.put(`/workspaces/${workspaceId}/products/${productId}`, data);
+    return response.data;
+  },
+
+  // Delete product
+  delete: async (workspaceId, productId) => {
     const response = await client.delete(`/workspaces/${workspaceId}/products/${productId}`);
     return response.data;
   },
 
   // Tag product to pages
-  tagProductToPages: async (workspaceId, productId, pageIds) => {
+  tagPages: async (workspaceId, productId, pageIds) => {
     const response = await client.post(
       `/workspaces/${workspaceId}/products/${productId}/tag-pages`,
       { page_ids: pageIds }

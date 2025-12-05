@@ -35,12 +35,6 @@ export const conversationsApi = {
     return response.data;
   },
 
-  // Get workspace conversations
-  getWorkspaceConversations: async (workspaceId) => {
-    const response = await client.get(`/workspaces/${workspaceId}/conversations`);
-    return response.data;
-  },
-
   // Get account overview conversation
   getAccountOverview: async (workspaceId) => {
     const response = await client.get(`/workspaces/${workspaceId}/conversations/overview`);
@@ -53,15 +47,17 @@ export const conversationsApi = {
     return response.data;
   },
 
-  // Get legacy conversations (pre-workspace)
+  // Get legacy (archived) conversations
   getLegacyConversations: async () => {
     const response = await client.get('/conversations/legacy');
     return response.data;
   },
 
-  // Archive a conversation
-  archiveConversation: async (conversationId) => {
-    const response = await client.post(`/conversations/${conversationId}/archive`);
+  // Update conversation's active product
+  updateActiveProduct: async (conversationId, productId) => {
+    const response = await client.put(`/conversations/${conversationId}/active-product`, {
+      product_id: productId,
+    });
     return response.data;
   },
 };
