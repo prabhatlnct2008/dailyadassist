@@ -23,6 +23,12 @@ class PreferencesResponse(BaseModel):
     """Response schema for user preferences."""
     id: str
     user_id: str
+    # Business/Product info
+    business_name: Optional[str] = None
+    product_description: Optional[str] = None
+    target_audience: Optional[str] = None
+    unique_selling_points: Optional[str] = None
+    # Default settings
     default_daily_budget: float = 50.0
     default_currency: str = "USD"
     default_geo: str = "US"
@@ -39,6 +45,12 @@ class PreferencesResponse(BaseModel):
 
 class PreferencesUpdate(BaseModel):
     """Schema for updating user preferences."""
+    # Business/Product info
+    business_name: Optional[str] = Field(None, max_length=255)
+    product_description: Optional[str] = None
+    target_audience: Optional[str] = None
+    unique_selling_points: Optional[str] = None
+    # Default settings
     default_daily_budget: Optional[float] = Field(None, gt=0)
     default_currency: Optional[str] = Field(None, max_length=10)
     default_geo: Optional[str] = Field(None, max_length=100)

@@ -152,6 +152,23 @@ class AgentService:
         state = self.conversation.state if self.conversation else 'idle'
         has_account = 'Yes' if self.ad_account else 'No'
 
+        # Get business/product info
+        business_name = getattr(self.preferences, 'business_name', None) or 'Not specified'
+        product_desc = getattr(self.preferences, 'product_description', None) or ''
+        target_audience = getattr(self.preferences, 'target_audience', None) or ''
+        usps = getattr(self.preferences, 'unique_selling_points', None) or ''
+
+        # Build product context section
+        product_context = f"- Business Name: {business_name}\n"
+        if product_desc:
+            product_context += f"- Product/Service: {product_desc}\n"
+        if target_audience:
+            product_context += f"- Target Audience: {target_audience}\n"
+        if usps:
+            product_context += f"- Unique Selling Points: {usps}\n"
+
+        has_product_info = bool(product_desc)
+
         return f"""You are the Daily Ad Agent, an AI Senior Media Buyer and Facebook Ads Strategist.
 
 ## Your Persona
@@ -165,6 +182,8 @@ class AgentService:
 - Current Conversation State: {state}
 - Ad Account Connected: {has_account}
 
+## Business/Product Context
+{product_context}
 ## Your Capabilities (Use the tools provided!)
 
 ### Performance Analysis Tools
@@ -191,23 +210,26 @@ class AgentService:
    - Don't make up data - use tools to get real information
    - When asked about stats, call `get_account_stats` first
 
-2. **Ad Copy Requirements**:
+2. **Product Info Required for Creatives**:
+   - {"Use the Business/Product Context above when generating creatives" if has_product_info else "IMPORTANT: Product info is not set up. When the user asks for creatives, ASK them what product/service they want to advertise BEFORE calling any creative tools. Do NOT make up example products."}
+
+3. **Ad Copy Requirements**:
    - Primary Text: 125-300 characters
    - Headline: max 40 characters
    - Description: 30-60 characters
    - Always suggest an appropriate CTA
 
-3. **Safety First**:
+4. **Safety First**:
    - Warn if budget exceeds 5x the default (${budget * 5})
    - NEVER publish without explicit user confirmation
    - Check for policy violations before publishing
 
-4. **Be Transparent**:
+5. **Be Transparent**:
    - Tell the user what tools you're using
    - Show the data you're basing recommendations on
    - Explain your reasoning
 
-5. **Keep responses concise** but informative. Use markdown for structure."""
+6. **Keep responses concise** but informative. Use markdown for structure."""
 
     def _get_conversation_history(self) -> list:
         """Get conversation history as LangChain messages."""
