@@ -133,7 +133,7 @@ class AgentService:
             self.agent_executor = AgentExecutor(
                 agent=agent,
                 tools=self.tools,
-                verbose=True,
+                verbose=False,  # Disable stdout callback, use file logging instead
                 handle_parsing_errors=True,
                 max_iterations=10,
                 return_intermediate_steps=True
@@ -274,6 +274,8 @@ Please check your configuration and try again."""
         """Stream response from the agent executor with tool visibility."""
 
         try:
+            logger.info(f"Agent processing message: {message[:100]}...")
+
             # Signal that we're processing
             yield "**Analyzing your request...**\n\n"
 
@@ -286,13 +288,16 @@ Please check your configuration and try again."""
             # Extract intermediate steps (tool calls)
             intermediate_steps = result.get("intermediate_steps", [])
 
-            # Show tool calls to user
+            # Log and show tool calls
             if intermediate_steps:
+                logger.info(f"Agent used {len(intermediate_steps)} tool(s)")
                 yield "**Tools Used:**\n"
                 for step in intermediate_steps:
                     action, observation = step
                     tool_name = action.tool
                     tool_input = action.tool_input
+
+                    logger.info(f"Tool called: {tool_name} with input: {tool_input}")
 
                     yield f"- `{tool_name}`: "
                     if isinstance(tool_input, dict):
@@ -304,6 +309,7 @@ Please check your configuration and try again."""
 
             # Stream the final output
             output = result.get("output", "")
+            logger.info(f"Agent response length: {len(output)} chars")
             for char in output:
                 yield char
 
