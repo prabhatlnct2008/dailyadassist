@@ -1,16 +1,24 @@
 """Flask application factory."""
 import os
+import logging
 from flask import Flask, jsonify
 from dotenv import load_dotenv
 
 from .config import config
 from .extensions import db, migrate, cors, jwt
+from .logging_config import setup_logging
 
 
 def create_app(config_name=None):
     """Create and configure the Flask application."""
-    # Load environment variables
+    # Load environment variables first
     load_dotenv()
+
+    # Setup logging early (before anything else logs)
+    setup_logging()
+
+    logger = logging.getLogger(__name__)
+    logger.info("Starting Daily Ad Agent application...")
 
     if config_name is None:
         config_name = os.environ.get('FLASK_ENV', 'development')
