@@ -90,19 +90,22 @@ class AgentService:
         try:
             from ..agents.tools import get_all_tools
 
+            logger.info(f"Initializing tools for user {self.user_id}...")
             self.tools = get_all_tools(
                 user_id=self.user_id,
                 ad_account=self.ad_account,
                 facebook_connection=self.facebook_connection,
                 preferences=self.preferences
             )
-            logger.info(f"Initialized {len(self.tools)} agent tools")
+            logger.info(f"Successfully initialized {len(self.tools)} agent tools")
         except Exception as e:
             logger.error(f"Failed to initialize tools: {e}", exc_info=True)
             self.tools = []
 
     def _init_agent(self):
         """Initialize the agent executor with tools."""
+        logger.info(f"Initializing agent... LLM: {self.llm is not None}, Tools: {len(self.tools) if self.tools else 0}")
+
         if not self.llm:
             logger.warning("Cannot initialize agent: LLM not available")
             return
@@ -135,7 +138,7 @@ class AgentService:
                 max_iterations=10,
                 return_intermediate_steps=True
             )
-            logger.info("Agent executor initialized successfully")
+            logger.info(f"Agent executor initialized successfully with {len(self.tools)} tools")
 
         except Exception as e:
             logger.error(f"Failed to initialize agent executor: {e}", exc_info=True)
