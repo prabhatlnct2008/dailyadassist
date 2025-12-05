@@ -75,6 +75,9 @@ class AdAccount(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # Relationships
+    workspace = db.relationship('Workspace', backref='ad_account', uselist=False)
+
     def __repr__(self):
         return f'<AdAccount {self.name} ({self.facebook_account_id})>'
 
@@ -93,6 +96,9 @@ class FacebookPage(db.Model):
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    workspace_pages = db.relationship('WorkspacePage', backref='facebook_page', cascade='all, delete-orphan')
 
     def __repr__(self):
         return f'<FacebookPage {self.name}>'

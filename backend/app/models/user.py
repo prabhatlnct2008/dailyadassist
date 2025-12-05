@@ -16,6 +16,9 @@ class User(db.Model):
     last_login_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
 
+    # Active workspace
+    active_workspace_id = db.Column(db.String(36), db.ForeignKey('workspaces.id', use_alter=True, name='fk_user_active_workspace'), nullable=True)
+
     # Relationships
     preferences = db.relationship('UserPreferences', backref='user', uselist=False, cascade='all, delete-orphan')
     facebook_connection = db.relationship('FacebookConnection', backref='user', uselist=False, cascade='all, delete-orphan')
@@ -25,6 +28,8 @@ class User(db.Model):
     drafts = db.relationship('AdDraft', backref='user', cascade='all, delete-orphan')
     activity_logs = db.relationship('ActivityLog', backref='user', cascade='all, delete-orphan')
     past_winners = db.relationship('PastWinner', backref='user', cascade='all, delete-orphan')
+    workspaces = db.relationship('Workspace', backref='user', foreign_keys='Workspace.user_id', cascade='all, delete-orphan')
+    active_workspace = db.relationship('Workspace', foreign_keys=[active_workspace_id], post_update=True)
 
     def __repr__(self):
         return f'<User {self.email}>'
